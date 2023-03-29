@@ -1,8 +1,8 @@
-{application, pmod_uwb, [
+{application, robot, [
     {description, "A GRiSP application"},
     {vsn, "0.1.0"},
     {registered, []},
-    {mod, {pmod_uwb, []}},
+    {mod, {robot, []}},
     {applications, [
         kernel,
         stdlib,

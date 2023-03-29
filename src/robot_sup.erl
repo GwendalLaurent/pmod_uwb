@@ -1,6 +1,6 @@
 % @private
-% @doc pmod_uwb top level supervisor.
--module(pmod_uwb_sup).
+% @doc robot top level supervisor.
+-module(robot_sup).
 
 -behavior(supervisor).
 

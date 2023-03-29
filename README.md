@@ -1,4 +1,4 @@
-pmod_uwb
+robot
 =====
 
 A GRiSP application
