@@ -1,6 +1,7 @@
 -module(pmod_uwb).
 -behaviour(gen_server).
 
+
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -11,6 +12,7 @@
 
 % Include for the record "device"
 -include("grisp.hrl").
+-include("pmod_uwb.hrl").
 
 %--- API -----------------------------------------------------------------------
 
@@ -54,36 +56,36 @@ call(Call) ->
     Dev = grisp_devices:default(?MODULE),
     gen_server:call(Dev#device.pid, Call).
 
-rw(read) -> 0;
-rw(write) -> 1.
-
-reg(dev_id) -> 16#00;
-reg(eui) -> 16#01;
-reg(panadr) -> 16#03;
-reg(sys_cfg) -> 16#04;
-reg(sys_time) -> 16#06;
-reg(tx_ctrl) -> 16#08;
-reg(tx_buffer) -> 16#09.
-
-regSize(dev_id) -> 4;
-regSize(eui) -> 8;
-regSize(panadr) -> 4;
-regSize(sys_cfg) -> 4;
-regSize(sys_time) -> 5;
-regSize(tx_ctrl) -> 5;
-regSize(tx_buffer) -> 1024.
-
+% Reverse the response of the pmod
 reverse(Bin) -> reverse(Bin, <<>>).
 reverse(<<Bin:8>>, Acc) -> 
     <<Bin, Acc/binary>>;
 reverse(<<Bin:8, Rest/bitstring>>, Acc) -> 
     reverse(Rest, <<Bin, Acc/binary>>).
 
+% Decode the response for each register IDs that allows a read operation on them
 decode(dev_id, Resp) -> 
     <<Ver:4/unsigned-little, Rev:4/unsigned-little, Model:8/unsigned-integer, RIDTAG2:8, RIDTAG1:8>> = Resp,
     #{ridtag => <<RIDTAG1, RIDTAG2>>, model => Model, ver => Ver, rev => Rev};
 decode(eui, Resp) ->
-    #{eui => reverse(Resp)}.
+    #{eui => reverse(Resp)};
+decode(panadr, Resp) ->
+    <<PanId:16, ShortAddr:16>> = reverse(Resp),
+    #{panid => PanId, shortaddr => ShortAddr};
+decode(sys_cfg, Resp) ->
+    <<
+        FFA4:1, FFAR:1, FFAM:1, FFAA:1, FFAD:1, FFAB:1, FFBC:1, FFEN:1, % bits 7-0
+        FCS_INIT2F:1, DIS_RSDE:1, DIS_PHE:1, DIS_DRXB:1, DIS_FCE:1, SPI_EDGE:1, HIRQ_POL:1, FFA5:1, % bits 15-8
+        _:1, RXM110K:1, _:3, DIS_STXP:1, PHR_MODE:2, % bits 23-16
+        AACKPEND:1, AUTOACK:1, RXAUTR:1, RXWTOE:1, _:4 % bits 31-24
+    >> = Resp,
+    #{aackpend => AACKPEND, autoack => AUTOACK, rxautr => RXAUTR, rxwtoe => RXWTOE, 
+      rxm110k => RXM110K, dis_stxp => DIS_STXP, phr_mode => PHR_MODE, 
+      fcs_init2F => FCS_INIT2F, dis_rsde => DIS_RSDE, dis_phe => DIS_PHE, dis_drxb => DIS_DRXB, dis_fce => DIS_FCE, spi_edge => SPI_EDGE, hirq_pol => HIRQ_POL, ffa5 => FFA5,
+      ffa4 => FFA4, ffar => FFAR, ffam => FFAM, ffaa => FFAA, ffad => FFAD, ffab => FFAB, ffbc => FFBC, ffen => FFEN};
+decode(sys_time, Resp) -> 
+    <<SysTime:40/unsigned-integer>> = reverse(Resp),
+    #{sys_time => SysTime}.
 
 % Create the header of the operation
 % Op: atom - either read or write
@@ -97,6 +99,8 @@ read_reg(Bus, RegFileID) ->
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, regSize(RegFileID)}]),
     debug_read(RegFileID, Resp),
     decode(RegFileID, Resp).
+
+%--- Debug ---------------------------------------------------------------------
 
 debug_read(Reg, Value) ->
     io:format("[PmodUWB] read  16#~2.16.0B --> ~s -> ~s~n",
