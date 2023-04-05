@@ -1,7 +1,8 @@
 robot
 =====
 
-A GRiSP application
+Contains the driver for the Pmod UWB in `pmod_uwb.erl`
+`robot.erl` just initialize the driver for us
 
 Build
 -----
@@ -11,4 +12,4 @@ Build
 Deploy
 ------
 
-    $ rebar3 grisp deploy -n <name> -v <version>
+    $ rebar3 grisp deploy
