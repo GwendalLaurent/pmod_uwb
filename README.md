@@ -13,3 +13,18 @@ Deploy
 ------
 
     $ rebar3 grisp deploy
+
+# Functionalities
+
+## Read a register
+The function `pmod_uwb:read/1` let you read any register file described in the DW1000 user manual. It returns a map of all the subregisters present in the register
+
+# Known issues
+
+* Reading the register drx_conf doesn't return the correct value for drx_tune2. The returned value is 0x311E0035 instead of 0x311A002D (even when using an offset). **Update**: This is normal as the DW1000 will start with that value stored in that register. However, the right value needs to be setup correctly afterwards
+
+* The DRX_CONF is supposed to have 44 bytes, however, the sum of all the registers reaches 45 bytes. The C code uses 44 bytes but the last sub-register *RXPACC_NOSAT* isn't present and thus the sum of all the registers in the code is 43 bytes. I choosed to stick with 44 bytes and use a place holder for the last byte.
+
+* Reading the register agc_ctrl doesn't return the correct value for agc_tune02. The returned value is 0x2482A8C7 instead of 0x2502A907.
+
+* Reading the register pmsc doesn't return the correct value for fineseq. 
