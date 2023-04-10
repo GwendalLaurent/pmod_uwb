@@ -6,8 +6,13 @@ rw(write) -> 1.
 -type writeOnly() :: tx_buffer.
 -type readOnly() :: dev_id | sys_time | rx_finfo | rx_buffer | rx_fqual | rx_ttcki | rx_ttcko | rx_time | tx_time | sys_state | acc_mem.
 
--define(IS_READ_ONLY(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
+-define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
                                  RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
+
+% -define(READ_ONLY_SUB_REG(SubRegister), )
+
+% ! list isn't complete yet
+-define(IS_SPECIAL(RegFileID), RegFileID==agc_ctrl).
 
 % Mapping of the different register IDs to their hexadecimal value
 regFile(dev_id) -> 16#00;
@@ -62,7 +67,12 @@ regFile(pmsc) -> 16#36;
 % 0x37 - 0x3F are reserved
 regFile(RegId) -> error({wrong_register_ID, RegId}).
 
+% AGC_CTRL
+subReg(agc_ctrl1) -> 16#02;
+subReg(agc_tune1) -> 16#04;
 subReg(agc_tune2) -> 16#0C;
+subReg(agc_tune3) -> 16#12;
+subReg(agc_stat1) -> 16#1E;
 subReg(drx_tune2) -> 16#08;
 subReg(ldotune) -> 16#30.
 
@@ -107,6 +117,11 @@ regSize(lde_ctrl) -> undefined; % No size ?
 regSize(dig_dag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
 regSize(pmsc) -> 41. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
 
+%% Gives the size in bytes
+subRegSize(agc_ctrl1) -> 2;
+subRegSize(agc_tune1) -> 2;
 subRegSize(agc_tune2) -> 4;
+subRegSize(agc_tune3) -> 2;
+subRegSize(agc_stat1) -> 3;
 subRegSize(drx_tune2) -> 4;
 subRegSize(ldotune) -> 5.

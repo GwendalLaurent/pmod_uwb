@@ -5,7 +5,7 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, read/2, write/2, write/3, write_tx_data/1]).
+-export([read/1, read/2, write/2, write_tx_data/1]).
 
 % Define the polarity and the phase of the clock
 -define(SPI_MODE, #{clock => {low, leading}}).
@@ -14,6 +14,7 @@
 -include("grisp.hrl").
 
 -include("pmod_uwb.hrl").
+
 
 %--- API -----------------------------------------------------------------------
 % TODO: Document the public API of the pmod
@@ -26,13 +27,32 @@ start_link(Connector, _Opts) ->
 read(RegFileID) -> call({read, RegFileID}).
 read(RegFileID, SubRegister) -> call({read, RegFileID, SubRegister}).
 
-write(RegFileID, Value) when ?IS_READ_ONLY(RegFileID) ->
+%% ---------------------------------------------------------------------------------------
+%% @doc Write values in a register
+%% 
+%% === Examples ===
+%% To write in a simple register file (i.e. a register without any sub-register):
+%% ```
+%% 1> pmod_uwb:write(eui, #{eui => 16#AAAAAABBBBBBBBBB}).
+%% ok
+%% ''' 
+%% To write in one sub-register of a register file:
+%% ```
+%% 2> pmod_uwb:write(panadr, #{pan_id => 16#AAAA}). 
+%% ok
+%% '''
+%% The previous code will only change the values inside the sub-register PAN_ID
+%%
+%% To write in multiple sub-register of a register file in the same burst:
+%% ```
+%% 3> pmod_uwb:write(panadr, #{pan_id => 16#AAAA, short_addr => 16#BBBB}).
+%% ok
+%% '''
+%% ---------------------------------------------------------------------------------------
+write(RegFileID, Value) when ?READ_ONLY_REG_FILE(RegFileID) ->
     error({write_on_read_only_register, RegFileID, Value});
-write(RegFileID, Value) -> call({write, RegFileID, Value}).
-
-write(RegFileID, SubRegister, Value) when ?IS_READ_ONLY(RegFileID) ->
-    error({write_on_read_only_register, RegFileID, SubRegister, Value});
-write(RegFileID, SubRegister, Value) -> call({write, RegFileID, SubRegister, Value}).
+write(RegFileID, Value) when is_map(Value) ->
+    call({write, RegFileID, Value}).
 
 write_tx_data(Value) -> call({write_tx, Value}).
 
@@ -63,7 +83,6 @@ verify_id(Bus) ->
 handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg(Bus, RegFileID), State};
 handle_call({read, RegFileID, SubRegister}, _From, #{bus := Bus} = State) -> {reply, read_sub_reg(Bus, RegFileID, SubRegister), State};
 handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
-handle_call({write, RegFileID, SubRegister, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, SubRegister, Value), State};
 handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
 
@@ -108,20 +127,50 @@ read_sub_reg(Bus, RegFileID, SubRegister) ->
     reverse(Resp).
 
 % TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
+% TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
 %% ---------------------------------------------------------------------------------------
-%% @doc write_reg/3 is used to write a value in a register file without any sub-register (e.g. SYS_TIME)
-%% @doc write_reg/4 is used to write a value in a specific sub-register within a register file 
+%% write_reg/3 is used to write the values in the map given in the Value argument
 %% ---------------------------------------------------------------------------------------
-write_reg(Bus, RegFileID, Value) -> write_reg(Bus, RegFileID, RegFileID, Value).
-write_reg(Bus, RegFileID, SubRegister, Value) ->
+write_reg(Bus, RegFileID, Value) when ?IS_SPECIAL(RegFileID) ->
+    maps:map(
+        fun(SubRegister, Val) ->
+            Header = header(write, RegFileID, SubRegister),
+            io:format("~s~n", [atom_to_list(SubRegister)]),
+            CurrVal = maps:get(SubRegister, read_reg(Bus, RegFileID)), % ? can the read be done before ? Maybe but not assured that no values changes after a write in the register
+            io:format("~w~n", [CurrVal]),
+            Body = case CurrVal of
+                        V when is_map(V) -> reg(encode, SubRegister, maps:merge_with(fun(_Key, _Old, New) -> New end, CurrVal, Val));
+                        _ -> reg(encode, SubRegister, #{SubRegister => Val})
+                   end,
+            debug_write(RegFileID, Body),
+            _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 2+subRegSize(SubRegister), 0}])
+        end,
+        Value),
+    ok;
+write_reg(Bus, RegFileID, Value) ->
     io:format("~w~n", [Value]),
     Header = header(write, RegFileID),
     CurrVal = read_reg(Bus, RegFileID),
-    Body = reg(encode, RegFileID, CurrVal#{SubRegister => Value}), % TODO: encode function
+    % TODO: Check that a field isn't a read only sub-register
+    ValuesToWrite = maps:merge_with(fun(_Key, _Value1, Value2) -> Value2 end, CurrVal, Value),
+    Body = reg(encode, RegFileID, ValuesToWrite),
     debug_write(RegFileID, Body),
     _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 1+regSize(RegFileID), 0}]),
     ok.
 
+%% ---------------------------------------------------------------------------------------
+%% @doc This function is used to write values to single sub-registers if they are mapped
+%% 
+%% Some Register don't allow writting in the reserved fields and, 
+%% thus the writting needs to be done sub-registers by sub-registers
+%% 
+%% Careful however, the sub-register must be mapped by itself
+%% ---------------------------------------------------------------------------------------
+write_sub_reg(Bus, RegFileID, SubRegister, Value) ->
+    Header = header(write, RegFileID, SubRegister),
+    Body = reg(encode, SubRegister, #{SubRegister => Value}),
+    _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 2+regSize(SubRegister), 0}]),
+    ok.
 
 %% ---------------------------------------------------------------------------------------
 %% @doc write_tx_data/2 sends data (Value) in the register tx_buffer
@@ -222,10 +271,30 @@ reg(encode, tx_fctrl, Val) ->
     >>);
 % TX_BUFFER is write only => no decode
 reg(decode, dx_time, Resp) ->
-    #{dx_time => reverse(Resp)};
+    #{
+        dx_time => reverse(Resp)
+    };
+reg(encode, tx_time, Val) ->
+    #{
+        dx_time := DX_TIME
+    } = Val,
+    reverse(<<
+        DX_TIME:40
+    >>);
 reg(decode, rx_fwto, Resp) ->
-    <<RXFWTO:16>> = reverse(Resp),
-    #{rxfwto => RXFWTO};
+    <<
+        RXFWTO:16
+    >> = reverse(Resp),
+    #{
+        rxfwto => RXFWTO
+    };
+reg(encode, rx_fwto, Val) ->
+    #{
+        rxfwto := RXFWTO
+    } = Val,
+    reverse(<<
+        RXFWTO:16
+    >>);
 reg(decode, sys_ctrl, Resp) ->
     <<
         WAIT4RESP:1, TRXOFF:1, _:2, CANSFCS:1, TXDLYS:1, TXSTRT:1, SFCST:1, % bits 7-0
@@ -233,35 +302,79 @@ reg(decode, sys_ctrl, Resp) ->
         _:8, % bits 23-16
         _:7, HRBPT:1 % bits 31-24
     >> = Resp,
-    #{sfcst => SFCST, txstrt => TXSTRT, txdlys => TXDLYS, cansfcs => CANSFCS, trxoff => TRXOFF, wait4resp => WAIT4RESP, rxenab => RXENAB, rxdlye => RXDLYE, hrbpt => HRBPT};
+    #{
+        sfcst => SFCST, txstrt => TXSTRT, txdlys => TXDLYS, cansfcs => CANSFCS, trxoff => TRXOFF, wait4resp => WAIT4RESP, 
+        rxenab => RXENAB, rxdlye => RXDLYE, 
+        hrbpt => HRBPT
+    };
+reg(encode, sys_ctrl, Val) ->
+    #{
+        sfcst := SFCST, txstrt := TXSTRT, txdlys := TXDLYS, cansfcs := CANSFCS, trxoff := TRXOFF, wait4resp := WAIT4RESP, 
+        rxenab := RXENAB, rxdlye := RXDLYE, 
+        hrbpt := HRBPT
+    } = Val,
+    <<
+        WAIT4RESP:1, TRXOFF:1, 2#0:2, CANSFCS:1, TXDLYS:1, TXSTRT:1, SFCST:1, % bits 7-0
+        2#0:6, RXDLYE:1, RXENAB:1, % bits 15-8
+        2#0:8, % bits 23-16
+        2#0:7, HRBPT:1 % bits 31-24
+    >>;
 reg(decode, sys_mask, Resp) ->
     <<
-        MTXFRS:1, MTXPHS:1, MTXPRS:1, MTXFRB:1, MAAT:1, MESYNCR:1, MCPLOCK:1, _:1, % bits 7-0
+        MTXFRS:1, MTXPHS:1, MTXPRS:1, MTXFRB:1, MAAT:1, MESYNCR:1, MCPLOCK:1, Reserved0:1, % bits 7-0
         MRXFCE:1, MRXFCG:1, MRXDFR:1, MRXPHE:1, MRXPHD:1, MLDEDON:1, MRXSFDD:1, MRXPRD:1, % bits 15-8
-        MSLP2INIT:1, MGPIOIRQ:1, MRXPTO:1, MRXOVRR:1, _:1, MLDEERR:1, MRXRFTO:1, MRXRFSL:1, % bits 23-16
-        _:2, MAFFREJ:1, MTXBERR:1, MHPDDWAR:1, MPLLHILO:1, MCPLLLL:1, MRFPLLLL:1 % bits 31-24
+        MSLP2INIT:1, MGPIOIRQ:1, MRXPTO:1, MRXOVRR:1, Reserved1:1, MLDEERR:1, MRXRFTO:1, MRXRFSL:1, % bits 23-16
+        Reserved2:2, MAFFREJ:1, MTXBERR:1, MHPDDWAR:1, MPLLHILO:1, MCPLLLL:1, MRFPLLLL:1 % bits 31-24
     >> = Resp,
     #{
-        mtxfrs => MTXFRS, mtxphs => MTXPHS, mtxprs => MTXPRS, mtxfrb => MTXFRB, maat => MAAT, mesyncr => MESYNCR, mcplock => MCPLOCK, % bits 7-0
+        mtxfrs => MTXFRS, mtxphs => MTXPHS, mtxprs => MTXPRS, mtxfrb => MTXFRB, maat => MAAT, mesyncr => MESYNCR, mcplock => MCPLOCK, res0 => Reserved0, % bits 7-0
         mrxfce => MRXFCE, mrxfcg => MRXFCG, mrxdfr => MRXDFR, mrxphe => MRXPHE, mrxphd => MRXPHD, mldeon => MLDEDON, mrxsfdd => MRXSFDD, mrxprd => MRXPRD, % bits 15-8
-        mslp2init => MSLP2INIT, mgpioirq => MGPIOIRQ, mrxpto => MRXPTO, mrxovrr => MRXOVRR, mldeerr => MLDEERR, mrxrfto => MRXRFTO, mrxrfsl => MRXRFSL, % bits 23-16
-        maffrej => MAFFREJ, mtxberr => MTXBERR, mhpddwar => MHPDDWAR, mpllhilo => MPLLHILO, mcpllll => MCPLLLL, mrfpllll => MRFPLLLL % bits 31-24
+        mslp2init => MSLP2INIT, mgpioirq => MGPIOIRQ, mrxpto => MRXPTO, mrxovrr => MRXOVRR, res1 => Reserved1, mldeerr => MLDEERR, mrxrfto => MRXRFTO, mrxrfsl => MRXRFSL, % bits 23-16
+        res2 => Reserved2, maffrej => MAFFREJ, mtxberr => MTXBERR, mhpddwar => MHPDDWAR, mpllhilo => MPLLHILO, mcpllll => MCPLLLL, mrfpllll => MRFPLLLL % bits 31-24
     };
+reg(encode, sys_mask, Val) ->
+    #{
+        mtxfrs := MTXFRS, mtxphs := MTXPHS, mtxprs := MTXPRS, mtxfrb := MTXFRB, maat := MAAT, mesyncr := MESYNCR, mcplock := MCPLOCK, res0 := Reserved0, % bits 7-0
+        mrxfce := MRXFCE, mrxfcg := MRXFCG, mrxdfr := MRXDFR, mrxphe := MRXPHE, mrxphd := MRXPHD, mldeon := MLDEDON, mrxsfdd := MRXSFDD, mrxprd := MRXPRD, % bits 15-8
+        mslp2init := MSLP2INIT, mgpioirq := MGPIOIRQ, mrxpto := MRXPTO, mrxovrr := MRXOVRR, res1 := Reserved1, mldeerr := MLDEERR, mrxrfto := MRXRFTO, mrxrfsl := MRXRFSL, % bits 23-16
+        res2 := Reserved2, maffrej := MAFFREJ, mtxberr := MTXBERR, mhpddwar := MHPDDWAR, mpllhilo := MPLLHILO, mcpllll := MCPLLLL, mrfpllll := MRFPLLLL % bits 31-24
+    } = Val,
+    <<
+        MTXFRS:1, MTXPHS:1, MTXPRS:1, MTXFRB:1, MAAT:1, MESYNCR:1, MCPLOCK:1, Reserved0:1, % bits 7-0
+        MRXFCE:1, MRXFCG:1, MRXDFR:1, MRXPHE:1, MRXPHD:1, MLDEDON:1, MRXSFDD:1, MRXPRD:1, % bits 15-8
+        MSLP2INIT:1, MGPIOIRQ:1, MRXPTO:1, MRXOVRR:1, Reserved1:1, MLDEERR:1, MRXRFTO:1, MRXRFSL:1, % bits 23-16
+        Reserved2:2, MAFFREJ:1, MTXBERR:1, MHPDDWAR:1, MPLLHILO:1, MCPLLLL:1, MRFPLLLL:1 % bits 31-24
+    >>;
 reg(decode, sys_status, Resp) ->
     <<
         TXFRS:1, TXPHS:1, TXPRS:1, TXFRB:1, AAT:1, ESYNCR:1, CPLOCK:1, IRQS:1, % bits 7-0
         RXFCE:1, RXFCG:1, RXDFR:1, RXPHE:1, RXPHD:1, LDEDONE:1, RXSFDD:1, RXPRD:1, % bits 15-8
-        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, _:1, LDEERR:1, RXRFTO:1, RXRFLS:1, % bits 23-16
+        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, Reserved0:1, LDEERR:1, RXRFTO:1, RXRFLS:1, % bits 23-16
         ICRBP:1, HSRBP:1, AFFREJ:1, TXBERR:1, HPDWARN:1, RXSFDTO:1, CLCKPLL_LL:1, RFPLL_LL:1, % bits 31-24
-        _:5, TXPUTE:1, RXPREJ:1, RXRSCS:1 % bits 39-32
+        Reserved1:5, TXPUTE:1, RXPREJ:1, RXRSCS:1 % bits 39-32
     >> = Resp,
     #{
         txfrs => TXFRS, txphs => TXPHS, txprs => TXPRS, txfrb => TXFRB, aat => AAT, esyncr => ESYNCR, cplock => CPLOCK, irqs => IRQS, % bits 7-0
         rxfce => RXFCE, rxfcg => RXFCG, rxdfr => RXDFR, rxhe => RXPHE, rxhd => RXPHD, ldeone => LDEDONE, rxsfdd => RXSFDD, rxprd => RXPRD, % bits 15-8
-        splt2init => SPL2INIT, gpioirq => GPIOIRQ, rxpto => RXPTO, rxovrr => RXOVRR, ldeerr => LDEERR, rxrfto => RXRFTO, rxrfls => RXRFLS, % bits 23-16
+        splt2init => SPL2INIT, gpioirq => GPIOIRQ, rxpto => RXPTO, rxovrr => RXOVRR, res0 => Reserved0, ldeerr => LDEERR, rxrfto => RXRFTO, rxrfls => RXRFLS, % bits 23-16
         icrbp => ICRBP, hsrbp => HSRBP, affrej => AFFREJ, txberr => TXBERR, hdpwarn => HPDWARN, rxsfdto => RXSFDTO, clkpll_ll => CLCKPLL_LL, rfpll_ll => RFPLL_LL, % bits 31-24
-        txpute => TXPUTE, rxprej => RXPREJ, rxrscs => RXRSCS
+        res1 => Reserved1, txpute => TXPUTE, rxprej => RXPREJ, rxrscs => RXRSCS
     };
+reg(encode, sys_status, Val) ->
+    #{
+        txfrs := TXFRS, txphs := TXPHS, txprs := TXPRS, txfrb := TXFRB, aat := AAT, esyncr := ESYNCR, cplock := CPLOCK, irqs := IRQS, % bits 7-0
+        rxfce := RXFCE, rxfcg := RXFCG, rxdfr := RXDFR, rxhe := RXPHE, rxhd := RXPHD, ldeone := LDEDONE, rxsfdd := RXSFDD, rxprd := RXPRD, % bits 15-8
+        splt2init := SPL2INIT, gpioirq := GPIOIRQ, rxpto := RXPTO, rxovrr := RXOVRR, res0 := Reserved0, ldeerr := LDEERR, rxrfto := RXRFTO, rxrfls := RXRFLS, % bits 23-16
+        icrbp := ICRBP, hsrbp := HSRBP, affrej := AFFREJ, txberr := TXBERR, hdpwarn := HPDWARN, rxsfdto := RXSFDTO, clkpll_ll := CLCKPLL_LL, rfpll_ll := RFPLL_LL, % bits 31-24
+        res1 := Reserved1, txpute := TXPUTE, rxprej := RXPREJ, rxrscs := RXRSCS
+    } = Val,
+    <<
+        TXFRS:1, TXPHS:1, TXPRS:1, TXFRB:1, AAT:1, ESYNCR:1, CPLOCK:1, IRQS:1, % bits 7-0
+        RXFCE:1, RXFCG:1, RXDFR:1, RXPHE:1, RXPHD:1, LDEDONE:1, RXSFDD:1, RXPRD:1, % bits 15-8
+        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, Reserved0:1, LDEERR:1, RXRFTO:1, RXRFLS:1, % bits 23-16
+        ICRBP:1, HSRBP:1, AFFREJ:1, TXBERR:1, HPDWARN:1, RXSFDTO:1, CLCKPLL_LL:1, RFPLL_LL:1, % bits 31-24
+        Reserved1:5, TXPUTE:1, RXPREJ:1, RXRSCS:1 % bits 39-32
+    >>;
 reg(decode, rx_finfo, Resp) ->
     <<
         RXPACC:12, RXPSR:2, RXPRFR:2, RNG:1, RXBR:2, RXNSPL:2, _:1, RXFLE:3, RXFLEN:7
@@ -307,6 +420,13 @@ reg(decode, tx_antd, Resp) ->
     #{
         tx_antd => reverse(Resp)
     };
+reg(encode, tx_antd, Val) ->
+    #{
+        tx_antd := TX_ANTD
+    } = Val,
+    reverse(<<
+        TX_ANTD:16
+    >>);
 reg(decode, sys_state, Resp) ->
     <<
         _:8, PMSC_STATE:8, _:3, RX_STATE:5, _:4, TX_STATE:4
@@ -321,14 +441,33 @@ reg(decode, ack_resp_t, Resp) ->
     #{
         ack_time => ACK_TIME, w4r_time => W4R_TIME
     };
+reg(encode, ack_resp_t, Val) ->
+    #{
+        ack_time := ACK_TIME, w4r_time := W4R_TIME
+    } = Val,
+    reverse(<<
+        ACK_TIME:8, 2#0:4, W4R_TIME:20
+    >>);
 reg(decode, rx_sniff, Resp) ->
     <<
-        _:16, SNIFF_OFFT:8, _:4, SNIFF_ONT:4
+        Reserved0:16, SNIFF_OFFT:8, Reserved1:4, SNIFF_ONT:4
     >> = reverse(Resp),
     #{
+        res0 => Reserved0,
         sniff_offt => SNIFF_OFFT,
-        sniff_ont => SNIFF_ONT
+        sniff_ont => SNIFF_ONT,
+        res1 => Reserved1
     };
+reg(encode, rx_sniff, Val) ->
+    #{
+        res0 := Reserved0,
+        sniff_offt := SNIFF_OFFT,
+        sniff_ont := SNIFF_ONT,
+        res1 := Reserved1
+    } = Val,
+    reverse(<<
+        Reserved0:16, SNIFF_OFFT:8, Reserved1:4, SNIFF_ONT:4
+    >>);
 % Smart transmit power control (cf. user manual p 104)
 reg(decode, tx_power, Resp) ->
     <<
@@ -337,13 +476,27 @@ reg(decode, tx_power, Resp) ->
     #{
         bootsp125 => BOOTSP125, bootstp250 => BOOSTP250, bootstp500 => BOOSTP500, bootstpnorm => BOOSTPNORM
     };
+reg(encode, tx_power, Val) ->
+    #{
+        bootsp125 := BOOTSP125, bootstp250 := BOOSTP250, bootstp500 := BOOSTP500, bootstpnorm := BOOSTPNORM
+    } = Val,
+    reverse(<<
+        BOOTSP125:8, BOOSTP250:8, BOOSTP500:8, BOOSTPNORM:8
+    >>);
 reg(decode, chan_ctrl, Resp) ->
     <<
-        RX_PCODE:5, TX_PCODE:5, RNSSFD:1, TNSSFD:1, RXPRF:2, DWSFD:1, _:9, RX_CHAN:4, TX_CHAN:4 
+        RX_PCODE:5, TX_PCODE:5, RNSSFD:1, TNSSFD:1, RXPRF:2, DWSFD:1, Reserved0:9, RX_CHAN:4, TX_CHAN:4 
     >> = reverse(Resp),
     #{
-        rx_pcode => RX_PCODE, tx_pcode => TX_PCODE, rnssfd => RNSSFD, tnssfd => TNSSFD, rxprf => RXPRF, dwsfd => DWSFD, rx_chan => RX_CHAN, tx_chan => TX_CHAN
+        rx_pcode => RX_PCODE, tx_pcode => TX_PCODE, rnssfd => RNSSFD, tnssfd => TNSSFD, rxprf => RXPRF, dwsfd => DWSFD, res0 => Reserved0, rx_chan => RX_CHAN, tx_chan => TX_CHAN
     };
+reg(encode, chan_ctrl, Val) ->
+    #{
+        rx_pcode := RX_PCODE, tx_pcode := TX_PCODE, rnssfd := RNSSFD, tnssfd := TNSSFD, rxprf := RXPRF, dwsfd := DWSFD, res0 := Reserved0, rx_chan := RX_CHAN, tx_chan := TX_CHAN
+    } = Val,
+    reverse(<<
+        RX_PCODE:5, TX_PCODE:5, RNSSFD:1, TNSSFD:1, RXPRF:2, DWSFD:1, Reserved0:9, RX_CHAN:4, TX_CHAN:4 
+    >>);
 % ! register names differ from user manual where some names are duplicated
 % TODO: Decode that register
 reg(decode, usr_sfd, Resp) ->
@@ -351,22 +504,68 @@ reg(decode, usr_sfd, Resp) ->
         _:(8*41)
     >> = Resp,
     #{};
-% ? divided in subregisters, should it be represented as such in the map ?
-reg(decode, agc_ctrl, Resp) ->
+% AGC_CTRL is a complex register with reserved bits that can't be written
+reg(decode, agc_ctrl1, Resp) ->
     <<
-        _:4, EDV2:9, EDG1:5, _:6, % AGC_STAT1
-        _:80, % Reserved 4
-        AGC_TUNE3:16, % AGC_TUNE3
-        _:16, % Reserved 3
-        AGC_TUNE2:32, % AGC_TUNE2
-        _:48, % Reserved 2
-        AGC_TUNE1:16, % AGC_TUNE1
-        _:15, DIS_AM:1, % AGC_CTRL1
-        _:16 % Reserved 1
+        Reserved:15, DIS_AM:1
     >> = reverse(Resp),
     #{
-        dis_am => DIS_AM, agc_tune1 => AGC_TUNE1, agc_tune2 => AGC_TUNE2, agc_tune3 => AGC_TUNE3, edv2 => EDV2, edg1 => EDG1
+        res => Reserved, dis_am => DIS_AM
     };
+reg(encode, agc_ctrl1, Val) ->
+    #{
+        res := Reserved, dis_am := DIS_AM
+    } = Val,
+    reverse(<<
+        Reserved:15, DIS_AM:1
+    >>);
+reg(decode, agc_tune1, Resp) -> 
+    <<
+        AGC_TUNE1:16
+    >> = reverse(Resp),
+    #{
+        agc_tune1 => AGC_TUNE1
+    };
+reg(encode, agc_tune1, Val) -> 
+    #{
+      agc_tune1 := AGC_TUNE1
+     } = Val,
+    reverse(<<
+        AGC_TUNE1:16
+    >>);
+reg(decode, agc_tune2, Resp) ->
+    <<
+        AGC_TUNE2:32
+    >> = reverse(Resp),
+    #{
+        agc_tune2 => AGC_TUNE2
+    };
+reg(decode, agc_tune3, Resp) ->
+    <<
+        AGC_TUNE3:16
+    >> = reverse(Resp),
+    #{
+        agc_tune3 => AGC_TUNE3
+    };
+reg(decode, agc_stat1, Resp) ->
+    <<
+        Reserved0:4, EDV2:9, EDG1:5, Reserved1:6
+    >> = reverse(Resp),
+    #{
+        res0 => Reserved0, edv2 => EDV2, edg1 => EDG1, res1 => Reserved1
+    };
+reg(decode, agc_ctrl, Resp) ->
+    <<
+        _:16, AGC_CTRL1:16/bitstring, AGC_TUNE1:16/bitstring, _:(6*8), AGC_TUNE2:32/bitstring, _:16, AGC_TUNE3:16/bitstring, _:80, AGC_STAT1:24/bitstring
+    >> = Resp,
+    lists:foldl(fun(Map1, Map2) -> maps:merge(Map1, Map2) end, #{}, 
+        [
+            #{agc_ctrl1 => reg(decode, agc_ctrl1, AGC_CTRL1)},
+            reg(decode, agc_tune1, AGC_TUNE1),
+            reg(decode, agc_tune2, AGC_TUNE2),
+            reg(decode, agc_tune3, AGC_TUNE3),
+            #{agc_stat1 => reg(decode, agc_stat1, AGC_STAT1)}
+        ]);
 reg(decode, ext_sync, Resp) ->
     <<
         _:26, OFFSET_EXT:6, % EC_GLOP        
