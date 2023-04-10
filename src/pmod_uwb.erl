@@ -505,13 +505,6 @@ reg(decode, usr_sfd, Resp) ->
     >> = Resp,
     #{};
 % AGC_CTRL is a complex register with reserved bits that can't be written
-reg(decode, agc_ctrl1, Resp) ->
-    <<
-        Reserved:15, DIS_AM:1
-    >> = reverse(Resp),
-    #{
-        res => Reserved, dis_am => DIS_AM
-    };
 reg(encode, agc_ctrl1, Val) ->
     #{
         res := Reserved, dis_am := DIS_AM
@@ -519,13 +512,6 @@ reg(encode, agc_ctrl1, Val) ->
     reverse(<<
         Reserved:15, DIS_AM:1
     >>);
-reg(decode, agc_tune1, Resp) -> 
-    <<
-        AGC_TUNE1:16
-    >> = reverse(Resp),
-    #{
-        agc_tune1 => AGC_TUNE1
-    };
 reg(encode, agc_tune1, Val) -> 
     #{
       agc_tune1 := AGC_TUNE1
@@ -533,39 +519,39 @@ reg(encode, agc_tune1, Val) ->
     reverse(<<
         AGC_TUNE1:16
     >>);
-reg(decode, agc_tune2, Resp) ->
-    <<
+reg(encode, agc_tune2, Val) ->
+    #{
+        agc_tune2 := AGC_TUNE2
+     } = Val,
+    reverse(<<
         AGC_TUNE2:32
-    >> = reverse(Resp),
+    >>);
+reg(encode, agc_tune3, Val) ->
     #{
-        agc_tune2 => AGC_TUNE2
-    };
-reg(decode, agc_tune3, Resp) ->
-    <<
+        agc_tune3 := AGC_TUNE3
+     } = Val,
+    reverse(<<
         AGC_TUNE3:16
-    >> = reverse(Resp),
-    #{
-        agc_tune3 => AGC_TUNE3
-    };
-reg(decode, agc_stat1, Resp) ->
-    <<
-        Reserved0:4, EDV2:9, EDG1:5, Reserved1:6
-    >> = reverse(Resp),
-    #{
-        res0 => Reserved0, edv2 => EDV2, edg1 => EDG1, res1 => Reserved1
-    };
+    >>);
 reg(decode, agc_ctrl, Resp) ->
     <<
-        _:16, AGC_CTRL1:16/bitstring, AGC_TUNE1:16/bitstring, _:(6*8), AGC_TUNE2:32/bitstring, _:16, AGC_TUNE3:16/bitstring, _:80, AGC_STAT1:24/bitstring
-    >> = Resp,
-    lists:foldl(fun(Map1, Map2) -> maps:merge(Map1, Map2) end, #{}, 
-        [
-            #{agc_ctrl1 => reg(decode, agc_ctrl1, AGC_CTRL1)},
-            reg(decode, agc_tune1, AGC_TUNE1),
-            reg(decode, agc_tune2, AGC_TUNE2),
-            reg(decode, agc_tune3, AGC_TUNE3),
-            #{agc_stat1 => reg(decode, agc_stat1, AGC_STAT1)}
-        ]);
+        _:4, EDV2:9, EDG1:5, _:6, % AGC_STAT1 (RP => don't save reserved bits)
+        _:80, % Reserved 4
+        AGC_TUNE3:16, % AGC_TUNE3
+        _:16, % Reserved 3
+        AGC_TUNE2:32, % AGC_TUNE2
+        _:48, % Reserved 2
+        AGC_TUNE1:16, % AGC_TUNE1
+        Reserved0:15, DIS_AM:1, % AGC_CTRL1 (RW => save reserved bits)
+        _:16 % Reserved 1
+    >> = reverse(Resp),
+    #{
+        agc_ctrl1 => #{res => Reserved0, dis_am => DIS_AM}, 
+        agc_tune1 => AGC_TUNE1, 
+        agc_tune2 => AGC_TUNE2, 
+        agc_tune3 => AGC_TUNE3, 
+        agc_stat1 => #{edv2 => EDV2, edg1 => EDG1}
+    };
 reg(decode, ext_sync, Resp) ->
     <<
         _:26, OFFSET_EXT:6, % EC_GLOP        

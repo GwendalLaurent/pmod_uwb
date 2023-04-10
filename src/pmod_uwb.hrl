@@ -9,7 +9,7 @@ rw(write) -> 1.
 -define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
                                  RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
 
-% -define(READ_ONLY_SUB_REG(SubRegister), )
+ -define(READ_ONLY_SUB_REG(SubRegister), SubRegister==agc_tune1).
 
 % ! list isn't complete yet
 -define(IS_SPECIAL(RegFileID), RegFileID==agc_ctrl).
