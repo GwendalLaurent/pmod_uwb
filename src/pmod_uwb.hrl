@@ -2,21 +2,31 @@
 rw(read) -> 0;
 rw(write) -> 1.
 
+% type isn't complete yet
 -type registerId() :: dev_id | eui | panadr | panadr | sys_cfg | sys_time | tx_fctrl | tx_buffer | dx_time | rx_fwto | sys_ctrl | sys_mask | sys_status | rx_finfo.
 -type writeOnly() :: tx_buffer.
 -type readOnly() :: dev_id | sys_time | rx_finfo | rx_buffer | rx_fqual | rx_ttcki | rx_ttcko | rx_time | tx_time | sys_state | acc_mem.
 
 -define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
-                                 RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
-
- -define(READ_ONLY_SUB_REG(SubRegister), SubRegister==agc_tune1).
+                                       RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
 
 % ! list isn't complete yet
--define(IS_SPECIAL(RegFileID), RegFileID==agc_ctrl).
+% The congifurations of the subregisters of these register files are different (some sub-registers are RO, some are RW and some have reserved bytes that can't be written)
+% Thus, some registers files require to write their sub-register independently => Write the sub-registers one by one instead of writting the whole register file directly
+-define(IS_SRW(RegFileID), RegFileID==agc_ctrl; RegFileID==ext_sync; RegFileID==ec_ctrl; RegFileID==gpio_ctrl; RegFileID==drx_conf; RegFileID==rf_conf; RegFileID==tx_cal; 
+                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==dig_dag; RegFileID==pmsc).
+
+% ! list isn't complete yet
+ -define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs; SubRegister==agc_stat1; SubRegister==ec_rxtc; SubRegister==ec_glop; SubRegister==drx_car_int; 
+                                         SubRegister==rf_status; SubRegister==tc_sarl; SubRegister==sarw; SubRegister==tc_pg_status; SubRegister==evc_phe; 
+                                         SubRegister==evc_rse; SubRegister==evc_fcg; SubRegister==evc_fce; SubRegister==evc_ffr; SubRegister==evc_ovr; 
+                                         SubRegister==evc_sto; SubRegister==evc_pto; SubRegister==evc_fwto; SubRegister==evc_txfs; SubRegister==evc_hpw; 
+                                         SubRegister==evc_tpw).
 
 % Mapping of the different register IDs to their hexadecimal value
 regFile(dev_id) -> 16#00;
 regFile(eui) -> 16#01;
+% 0x02 is reserved
 regFile(panadr) -> 16#03;
 regFile(sys_cfg) -> 16#04;
 % 0x05 is reserved
@@ -61,20 +71,69 @@ regFile(fs_ctrl) -> 16#2B;
 regFile(aon) -> 16#2C;
 regFile(otp_if) -> 16#2D;
 regFile(lde_ctrl) -> 16#2E; % No size ?
-regFile(dig_dag) -> 16#2F;
+regFile(dig_diag) -> 16#2F;
 % 0x30 - 0x35 are reserved
 regFile(pmsc) -> 16#36;
 % 0x37 - 0x3F are reserved
 regFile(RegId) -> error({wrong_register_ID, RegId}).
 
+% Only the writtable subregisters in SRW register files are present here
 % AGC_CTRL
 subReg(agc_ctrl1) -> 16#02;
 subReg(agc_tune1) -> 16#04;
 subReg(agc_tune2) -> 16#0C;
 subReg(agc_tune3) -> 16#12;
 subReg(agc_stat1) -> 16#1E;
+subReg(ec_ctrl) -> 16#00;
+subReg(gpio_mode) -> 16#00;
+subReg(gpio_dir) -> 16#08;
+subReg(gpio_dout) -> 16#0C;
+subReg(gpio_irqe) -> 16#10;
+subReg(gpio_isen) -> 16#14;
+subReg(gpio_imode) -> 16#18;
+subReg(gpio_ibes) -> 16#1C;
+subReg(gpio_iclr) -> 16#20;
+subReg(gpio_idbe) -> 16#24;
+subReg(gpio_raw) -> 16#28;
+subReg(drx_tune0b) -> 16#02;
+subReg(drx_tune1a) -> 16#04;
+subReg(drx_tune1b) -> 16#06;
 subReg(drx_tune2) -> 16#08;
-subReg(ldotune) -> 16#30.
+subReg(drx_sfdtoc) -> 16#20;
+subReg(drx_pretoc) -> 16#24;
+subReg(drx_tune4h) -> 16#26;
+subReg(rf_conf) -> 16#00;
+subReg(rf_rxctrlh) -> 16#0B;
+subReg(rf_txctrl) -> 16#0C;
+subReg(ldotune) -> 16#30;
+subReg(tc_sarc) -> 16#00;
+subReg(tc_pg_ctrl) -> 16#08;
+subReg(tc_pgdelay) -> 16#0B;
+subReg(tc_pgtest) -> 16#0C;
+subReg(fs_pllcfg) -> 16#07;
+subReg(fs_plltune) -> 16#0B;
+subReg(fs_xtalt) -> 16#0E;
+subReg(aon_wcfg) -> 16#00;
+subReg(aon_ctrl) -> 16#02;
+subReg(aon_rdat) -> 16#03;
+subReg(aon_addr) -> 16#04;
+subReg(aon_cfg0) -> 16#06;
+subReg(aon_cfg1) -> 16#0A;
+subReg(otp_wdat) -> 16#00;
+subReg(otp_addr) -> 16#04;
+subReg(otp_ctrl) -> 16#06;
+subReg(otp_stat) -> 16#08;
+subReg(otp_rdat) -> 16#0A;
+subReg(otp_srdat) -> 16#0E;
+subReg(otp_sf) -> 16#12;
+subReg(evc_ctrl) -> 16#00;
+subReg(diag_tmc) -> 16#24;
+subReg(pmsc_ctrl0) -> 16#00;
+subReg(pmsc_ctrl1) -> 16#04;
+subReg(pmsc_snozt) -> 16#0C;
+subReg(pmsc_txfseq) -> 16#26;
+subReg(pmsc_ledc) -> 16#28.
+
 
 % Mapping of the size in bytes of the different register IDs
 regSize(dev_id) -> 4;
@@ -108,7 +167,7 @@ regSize(ext_sync) -> 12;
 regSize(acc_mem) -> 4064;
 regSize(gpio_ctrl) -> 44;
 regSize(drx_conf) -> 44; % user manual gives 44 bytes but sum of register length gives 45 bytes
-regSize(rf_conf) -> 58;
+regSize(rf_conf) -> 58; % user manual gives 58 but sum of all its register gives 53 => Placeholder for the remaining 8 bytes
 regSize(tx_cal) -> 13; % user manual gives 52 bytes but sum of all sub regs gives 13 bytes
 regSize(fs_ctrl) -> 21;
 regSize(aon) -> 12;
@@ -123,5 +182,53 @@ subRegSize(agc_tune1) -> 2;
 subRegSize(agc_tune2) -> 4;
 subRegSize(agc_tune3) -> 2;
 subRegSize(agc_stat1) -> 3;
+subRegSize(ec_ctrl) -> 4;
+subRegSize(gpio_mode) -> 4;
+subRegSize(gpio_dir) -> 4;
+subRegSize(gpio_dout) -> 4;
+subRegSize(gpio_irqe) -> 4;
+subRegSize(gpio_isen) -> 4;
+subRegSize(gpio_imode) -> 4;
+subRegSize(gpio_ibes) -> 4;
+subRegSize(gpio_iclr) -> 4;
+subRegSize(gpio_idbe) -> 4;
+subRegSize(gpio_raw) -> 4;
+subRegSize(drx_tune0b) -> 2;
+subRegSize(drx_tune1a) -> 2;
+subRegSize(drx_tune1b) -> 2;
 subRegSize(drx_tune2) -> 4;
-subRegSize(ldotune) -> 5.
+subRegSize(drx_sfdtoc) -> 2;
+subRegSize(drx_pretoc) -> 2;
+subRegSize(drx_tune4h) -> 2;
+subRegSize(rf_conf) -> 4;
+subRegSize(rf_rxctrlh) -> 1;
+subRegSize(rf_txctrl) -> 4; % ! table in user manual gives 3 but details gives 4
+subRegSize(ldotune) -> 5;
+subRegSize(tc_sarc) -> 2;
+subRegSize(tc_pg_ctrl) -> 1;
+subRegSize(tc_pgdelay) -> 1;
+subRegSize(tc_pgtest) -> 1;
+subRegSize(fs_pllcfg) -> 4;
+subRegSize(fs_plltune) -> 1;
+subRegSize(fs_xtalt) -> 1;
+subRegSize(aon_wcfg) -> 2;
+subRegSize(aon_ctrl) -> 1;
+subRegSize(aon_rdat) -> 1;
+subRegSize(aon_addr) -> 1;
+subRegSize(aon_cfg0) -> 4;
+subRegSize(aon_cfg1) -> 2;
+subRegSize(otp_wdat) -> 4;
+subRegSize(otp_addr) -> 2;
+subRegSize(otp_ctrl) -> 2;
+subRegSize(otp_stat) -> 2;
+subRegSize(otp_rdat) -> 4;
+subRegSize(otp_srdat) -> 4;
+subRegSize(otp_sf) -> 1;
+subRegSize(evc_ctrl) -> 4;
+subRegSize(diag_tmc) -> 2;
+subRegSize(pmsc_ctrl0) -> 4;
+subRegSize(pmsc_ctrl1) -> 4;
+subRegSize(pmsc_snozt) -> 1;
+subRegSize(pmsc_txfseq) -> 2;
+subRegSize(pmsc_ledc) -> 4;
+subRegSize(_) -> error({error}). % TODO: remove or make a better error
