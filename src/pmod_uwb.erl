@@ -5,7 +5,7 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, read/2, write/2, write_tx_data/1]).
+-export([read/1, write/2, write_tx_data/1]).
 
 % Define the polarity and the phase of the clock
 -define(SPI_MODE, #{clock => {low, leading}}).
@@ -16,16 +16,28 @@
 -include("pmod_uwb.hrl").
 
 
+-type regFileID() :: atom().
+
 %--- API -----------------------------------------------------------------------
 % TODO: Document the public API of the pmod
 
+%% @private
 start_link(Connector, _Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Connector, []).
 
-% TODO: update the spec
--spec read(RegFileID :: registerId()) -> map() | {error, any()}.
+
+%% ---------------------------------------------------------------------------------------
+%% @doc read a register file
+%%
+%% === Example ===
+%% To read the register file DEV_ID
+%% ``` 
+%% 1> pmod_uwb:read(dev_id).
+%% #{model => 1,rev => 0,ridtag => "DECA",ver => 3}
+%% '''
+%% ---------------------------------------------------------------------------------------
+-spec read(RegFileID :: regFileID()) -> map() | {error, any()}.
 read(RegFileID) -> call({read, RegFileID}).
-read(RegFileID, SubRegister) -> call({read, RegFileID, SubRegister}).
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Write values in a register
@@ -53,10 +65,11 @@ read(RegFileID, SubRegister) -> call({read, RegFileID, SubRegister}).
 %% 4> pmod_uwb:write(agc_ctrl, #{agc_ctrl1 => #{dis_am => 2#0}}).
 %% '''
 %% ---------------------------------------------------------------------------------------
+-spec write(RegFileID :: regFileID(), Value :: map()) -> ok | {error, any()}.
 write(RegFileID, Value) when ?READ_ONLY_REG_FILE(RegFileID) ->
     error({write_on_read_only_register, RegFileID, Value});
 write(RegFileID, Value) when is_map(Value) ->
-call({write, RegFileID, Value}).
+    call({write, RegFileID, Value}).
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Write the data in the TX_BUFFER register
@@ -66,11 +79,12 @@ call({write, RegFileID, Value}).
 %% ```
 %% 1> pmod_uwb:write_tx_data(<<"Hello"">>).
 %% '''
--spec write_tx_data(Value :: binary()) -> any().
+-spec write_tx_data(Value :: binary()) -> ok | {error, any()}.
 write_tx_data(Value) -> call({write_tx, Value}).
 
 %--- Callbacks -----------------------------------------------------------------
 
+%% @private
 init(Slot) ->
     % Verify the slot used
     case {grisp_hw:platform(), Slot} of
@@ -79,26 +93,20 @@ init(Slot) ->
     end,
     grisp_devices:register(Slot, ?MODULE),
     Bus = grisp_spi:open(Slot),
-    % Verify the dev_id
     case verify_id(Bus) of
-        ok -> {ok, #{bus => Bus}};
+        ok -> write_default_values(Bus);
         Val -> error({dev_id_no_match, Val})
-    end.
+    end,
+    {ok, #{bus => Bus}}.
     % TODO reset the DW1000 like in the code example
 
-verify_id(Bus) ->
-    #{ridtag := Val} = read_reg(Bus, dev_id),
-    case Val of
-        <<16#DE:8, 16#CA:8>> -> ok;
-        _ -> Val
-    end.
-
+%% @private
 handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg(Bus, RegFileID), State};
-handle_call({read, RegFileID, SubRegister}, _From, #{bus := Bus} = State) -> {reply, read_sub_reg(Bus, RegFileID, SubRegister), State};
 handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
 handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
 
+%% @private
 handle_cast(Request, _State) -> error({unknown_cast, Request}).
 
 %--- Internal ------------------------------------------------------------------
@@ -107,8 +115,33 @@ call(Call) ->
     Dev = grisp_devices:default(?MODULE),
     gen_server:call(Dev#device.pid, Call).
 
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Varify the dev_id register of the pmod
+%% @returns ok if the value is correct, otherwise the value read
+%% ---------------------------------------------------------------------------------------
+verify_id(Bus) ->
+    #{ridtag := Val} = read_reg(Bus, dev_id),
+    case Val of
+        "DECA" -> ok;
+        _ -> Val
+    end.
+
+% Writes the default values described in section 2.5.5 of the user manual
+write_default_values(Bus) ->
+    write_reg(Bus, agc_ctrl, #{agc_tune1 => 16#8870, agc_tune2 => 16#2502A907}),
+    write_reg(Bus, drx_conf, #{drx_tune2 => 16#311A002D}),
+    % write_reg(Bus, lde_if, #{ntm => 16#D, lde_cfg2 => 16#1607}),
+    write_reg(Bus, tx_power, #{tx_power => 16#0E082848}),
+    write_reg(Bus, rf_conf, #{rf_txctrl => 16#001E3FE3}),
+    write_reg(Bus, tx_cal, #{tc_pgdelay => 16#B5}),
+    write_reg(Bus, fs_ctrl, #{fs_plltune => 16#BE}).
+
 % Reverse the response of the pmod
-% TODO: document this
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% @doc Reverse the byte order of the bitstring given in the argument 
+%% ---------------------------------------------------------------------------------------
 reverse(Bin) -> reverse(Bin, <<>>).
 reverse(<<Bin:8>>, Acc) -> 
     <<Bin, Acc/binary>>;
@@ -119,25 +152,27 @@ reverse(<<Bin:8, Rest/bitstring>>, Acc) ->
 % Op: atom - either read or write
 % RegFileID: atom - identifier of the register file id according to the data sheet
 % returns the corresponding header in binary format (1 byte long) 
-% TODO: document this
+
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% @doc Creates the header of the SPI communication between the GRiSP and the pmod
+%% ---------------------------------------------------------------------------------------
 header(Op, RegFileID) ->
     <<(rw(Op)):1, 2#0:1, (regFile(RegFileID)):6>>.
 header(Op, RegFileID, SubRegister) ->
     << (rw(Op)):1, 2#1:1, (regFile(RegFileID)):6,
         2#0:1, (subReg(SubRegister)):7 >>.
 
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% @doc Read the values stored in a register file
+%% ---------------------------------------------------------------------------------------
 read_reg(Bus, tx_buffer) -> error({read_write_only, Bus, tx_buffer});
 read_reg(Bus, RegFileID) ->
     Header = header(read, RegFileID),
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, regSize(RegFileID)}]),
-    debug_read(RegFileID, Resp),
+    % debug_read(RegFileID, Resp),
     reg(decode, RegFileID, Resp).
-
-read_sub_reg(Bus, RegFileID, SubRegister) ->
-    Header = header(read, RegFileID, SubRegister),
-    [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 2, subRegSize(SubRegister)}]),
-    debug_read(RegFileID, Resp),
-    reverse(Resp).
 
 % TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
@@ -153,11 +188,7 @@ write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
                         V when is_map(V) -> reg(encode, SubRegister, maps:merge_with(fun(_Key, _Old, New) -> New end, CurrVal, Val));
                         _ -> reg(encode, SubRegister, #{SubRegister => Val})
                    end,
-            io:format("Writting [~w - ~w]~n", [SubRegister, subReg(SubRegister)]),
-            debug_write(RegFileID, Body),
-            io:format("~w~n", [Body]),
-            io:format("~w~n", [<<Header/binary, Body/binary>>]),
-            io:format("~w~n", [2+subRegSize(SubRegister)]),
+            % debug_write(RegFileID, Body),
             _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 2+subRegSize(SubRegister), 0}])
         end,
         Value),
@@ -168,7 +199,7 @@ write_reg(Bus, RegFileID, Value) ->
     % TODO: Check that a field isn't a read only sub-register, maybe use filter to check them
     ValuesToWrite = maps:merge_with(fun(_Key, _Value1, Value2) -> Value2 end, CurrVal, Value),
     Body = reg(encode, RegFileID, ValuesToWrite),
-    debug_write(RegFileID, Body),
+    % debug_write(RegFileID, Body),
     _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 1+regSize(RegFileID), 0}]),
     ok.
 
@@ -192,11 +223,11 @@ write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
 %% ---------------------------------------------------------------------------------------
 reg(encode, SubRegister, Value) when ?READ_ONLY_SUB_REG(SubRegister) -> error({writing_read_only_sub_register, SubRegister, Value});
 reg(decode, dev_id, Resp) -> 
-    << 
-        Ver:4/integer, Rev:4/integer, Model:8/integer, RIDTAG2:8, RIDTAG1:8
-    >> = Resp,
+    <<
+      RIDTAG:16, Model:8, Ver:4, Rev:4
+    >> = reverse(Resp),
     #{
-        ridtag => <<RIDTAG1, RIDTAG2>>, model => Model, ver => Ver, rev => Rev
+        ridtag => integer_to_list(RIDTAG, 16), model => Model, ver => Ver, rev => Rev
     };
 reg(decode, eui, Resp) ->
     #{
@@ -478,12 +509,11 @@ reg(decode, tx_power, Resp) ->
         boostp125 => BOOSTP125, boostp250 => BOOSTP250, boostp500 => BOOSTP500, boostnorm => BOOSTNORM
     };
 reg(encode, tx_power, Val) ->
-    #{
-        boostp125 := BOOSTP125, boostp250 := BOOSTP250, boostp500 := BOOSTP500, boostnorm := BOOSTNORM
-    } = Val,
-    reverse(<<
-        BOOSTP125:8, BOOSTP250:8, BOOSTP500:8, BOOSTNORM:8
-    >>);
+    % Leave the possibility to the user to write the value as one
+    case Val of
+        #{ tx_power := ValToEncode } -> reverse(<<ValToEncode:32>>);
+        #{ boostp125 := BOOSTP125, boostp250 := BOOSTP250, boostp500 := BOOSTP500, boostnorm := BOOSTNORM } ->reverse(<<BOOSTP125:8, BOOSTP250:8, BOOSTP500:8, BOOSTNORM:8>>)
+    end;
 reg(decode, chan_ctrl, Resp) ->
     <<
         RX_PCODE:5, TX_PCODE:5, RNSSFD:1, TNSSFD:1, RXPRF:2, DWSFD:1, Reserved0:9, RX_CHAN:4, TX_CHAN:4 
@@ -1027,7 +1057,7 @@ reg(encode, diag_tmc, Val) ->
     reverse(<<
         2#0:11, TX_PSTM:1, 2#0:4 % DIAG_TMC
     >>);
-reg(decode, dig_dag, Resp) -> 
+reg(decode, dig_diag, Resp) -> 
     <<
         _:11, TX_PSTM:1, _:4, % DIAG_TMC
         _:64, % Reserved 1

@@ -3,26 +3,27 @@ rw(read) -> 0;
 rw(write) -> 1.
 
 % type isn't complete yet
--type registerId() :: dev_id | eui | panadr | panadr | sys_cfg | sys_time | tx_fctrl | tx_buffer | dx_time | rx_fwto | sys_ctrl | sys_mask | sys_status | rx_finfo.
+%-type regFileID() :: dev_id | eui | panadr | panadr | sys_cfg | sys_time | tx_fctrl | tx_buffer | dx_time | rx_fwto | sys_ctrl | sys_mask | sys_status | rx_finfo |
+%                     rx_buffer | rx_fqual | rx_ttcki | rx_ttcko | rx_time | tx_time | tx_antd | sys_state | ack_resp_t | rx_sniff | tx_power | chan_ctrl | usr_sfd |
+%                     agc_ctrl | ext_sync | acc_mem | gpio_ctrl | drx_conf | rf_conf | tx_cal | fs_ctrl | aon | otp_if | lde_ctrl | dig_diag | pmsc.
+
+
 -type writeOnly() :: tx_buffer.
 -type readOnly() :: dev_id | sys_time | rx_finfo | rx_buffer | rx_fqual | rx_ttcki | rx_ttcko | rx_time | tx_time | sys_state | acc_mem.
 
 -define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
                                        RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
 
-% ! list isn't complete yet
 % The congifurations of the subregisters of these register files are different (some sub-registers are RO, some are RW and some have reserved bytes that can't be written)
 % Thus, some registers files require to write their sub-register independently => Write the sub-registers one by one instead of writting the whole register file directly
 -define(IS_SRW(RegFileID), RegFileID==agc_ctrl; RegFileID==ext_sync; RegFileID==ec_ctrl; RegFileID==gpio_ctrl; RegFileID==drx_conf; RegFileID==rf_conf; RegFileID==tx_cal; 
-                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==dig_dag; RegFileID==pmsc).
+                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==dig_diag; RegFileID==pmsc).
 
-% ! list isn't complete yet
- -define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs; SubRegister==agc_stat1; SubRegister==ec_rxtc; SubRegister==ec_glop; SubRegister==drx_car_int; 
+-define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs; SubRegister==agc_stat1; SubRegister==ec_rxtc; SubRegister==ec_glop; SubRegister==drx_car_int; 
                                          SubRegister==rf_status; SubRegister==tc_sarl; SubRegister==sarw; SubRegister==tc_pg_status; SubRegister==evc_phe; 
                                          SubRegister==evc_rse; SubRegister==evc_fcg; SubRegister==evc_fce; SubRegister==evc_ffr; SubRegister==evc_ovr; 
                                          SubRegister==evc_sto; SubRegister==evc_pto; SubRegister==evc_fwto; SubRegister==evc_txfs; SubRegister==evc_hpw; 
                                          SubRegister==evc_tpw).
-
 % Mapping of the different register IDs to their hexadecimal value
 regFile(dev_id) -> 16#00;
 regFile(eui) -> 16#01;
@@ -173,7 +174,7 @@ regSize(fs_ctrl) -> 21;
 regSize(aon) -> 12;
 regSize(otp_if) -> 19; % user manual gives 18 bytes in regs table but sum of all sub regs is 19 bytes
 regSize(lde_ctrl) -> undefined; % No size ?
-regSize(dig_dag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
+regSize(dig_diag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
 regSize(pmsc) -> 41. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
 
 %% Gives the size in bytes
