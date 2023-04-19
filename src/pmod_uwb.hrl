@@ -17,13 +17,16 @@ rw(write) -> 1.
 % The congifurations of the subregisters of these register files are different (some sub-registers are RO, some are RW and some have reserved bytes that can't be written)
 % Thus, some registers files require to write their sub-register independently => Write the sub-registers one by one instead of writting the whole register file directly
 -define(IS_SRW(RegFileID), RegFileID==agc_ctrl; RegFileID==ext_sync; RegFileID==ec_ctrl; RegFileID==gpio_ctrl; RegFileID==drx_conf; RegFileID==rf_conf; RegFileID==tx_cal; 
-                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==dig_diag; RegFileID==pmsc).
+                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==lde_if; RegFileID==dig_diag; RegFileID==pmsc).
 
 -define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs; SubRegister==agc_stat1; SubRegister==ec_rxtc; SubRegister==ec_glop; SubRegister==drx_car_int; 
-                                         SubRegister==rf_status; SubRegister==tc_sarl; SubRegister==sarw; SubRegister==tc_pg_status; SubRegister==evc_phe; 
-                                         SubRegister==evc_rse; SubRegister==evc_fcg; SubRegister==evc_fce; SubRegister==evc_ffr; SubRegister==evc_ovr; 
-                                         SubRegister==evc_sto; SubRegister==evc_pto; SubRegister==evc_fwto; SubRegister==evc_txfs; SubRegister==evc_hpw; 
-                                         SubRegister==evc_tpw).
+                                         SubRegister==rf_status; SubRegister==tc_sarl; SubRegister==sarw; SubRegister==tc_pg_status; SubRegister==lde_thresh;
+                                         SubRegister==lde_ppindx; SubRegister==lde_ppampl; SubRegister==evc_phe; SubRegister==evc_rse; SubRegister==evc_fcg; 
+                                         SubRegister==evc_fce; SubRegister==evc_ffr; SubRegister==evc_ovr; SubRegister==evc_sto; SubRegister==evc_pto; 
+                                         SubRegister==evc_fwto; SubRegister==evc_txfs; SubRegister==evc_hpw; SubRegister==evc_tpw).
+
+-define(TEST(SubReg), subRegSize(SubReg) < 127).
+
 % Mapping of the different register IDs to their hexadecimal value
 regFile(dev_id) -> 16#00;
 regFile(eui) -> 16#01;
@@ -71,7 +74,8 @@ regFile(tx_cal) -> 16#2A;
 regFile(fs_ctrl) -> 16#2B;
 regFile(aon) -> 16#2C;
 regFile(otp_if) -> 16#2D;
-regFile(lde_ctrl) -> 16#2E; % No size ?
+regFile(lde_ctrl) -> regFile(lde_if); % No size ?
+regFile(lde_if) -> 16#2E;
 regFile(dig_diag) -> 16#2F;
 % 0x30 - 0x35 are reserved
 regFile(pmsc) -> 16#36;
@@ -127,6 +131,13 @@ subReg(otp_stat) -> 16#08;
 subReg(otp_rdat) -> 16#0A;
 subReg(otp_srdat) -> 16#0E;
 subReg(otp_sf) -> 16#12;
+subReg(lde_thresh) -> 16#00;
+subReg(lde_cfg1) -> 16#806;
+subReg(lde_ppindx) -> 16#1000;
+subReg(lde_ppampl) -> 16#1002;
+subReg(lde_rxantd) -> 16#1804;
+subReg(lde_cfg2) -> 16#1806;
+subReg(lde_repc) -> 16#2804;
 subReg(evc_ctrl) -> 16#00;
 subReg(diag_tmc) -> 16#24;
 subReg(pmsc_ctrl0) -> 16#00;
@@ -225,6 +236,13 @@ subRegSize(otp_stat) -> 2;
 subRegSize(otp_rdat) -> 4;
 subRegSize(otp_srdat) -> 4;
 subRegSize(otp_sf) -> 1;
+subRegSize(lde_thresh) -> 2;
+subRegSize(lde_cfg1) -> 1;
+subRegSize(lde_ppindx) -> 2;
+subRegSize(lde_ppampl) -> 2;
+subRegSize(lde_rxantd) -> 2;
+subRegSize(lde_cfg2) -> 2;
+subRegSize(lde_repc) -> 2;
 subRegSize(evc_ctrl) -> 4;
 subRegSize(diag_tmc) -> 2;
 subRegSize(pmsc_ctrl0) -> 4;

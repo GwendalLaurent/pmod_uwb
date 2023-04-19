@@ -127,7 +127,9 @@ verify_id(Bus) ->
         _ -> Val
     end.
 
-% Writes the default values described in section 2.5.5 of the user manual
+%% ---------------------------------------------------------------------------------------
+%% Writes the default values described in section 2.5.5 of the user manual
+%% ---------------------------------------------------------------------------------------
 write_default_values(Bus) ->
     write_reg(Bus, agc_ctrl, #{agc_tune1 => 16#8870, agc_tune2 => 16#2502A907}),
     write_reg(Bus, drx_conf, #{drx_tune2 => 16#311A002D}),
@@ -141,6 +143,7 @@ write_default_values(Bus) ->
 %% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Reverse the byte order of the bitstring given in the argument 
+%% @param Bin a bitstring
 %% ---------------------------------------------------------------------------------------
 reverse(Bin) -> reverse(Bin, <<>>).
 reverse(<<Bin:8>>, Acc) -> 
@@ -148,37 +151,81 @@ reverse(<<Bin:8>>, Acc) ->
 reverse(<<Bin:8, Rest/bitstring>>, Acc) -> 
     reverse(Rest, <<Bin, Acc/binary>>).
 
-% Create the header of the operation
-% Op: atom - either read or write
-% RegFileID: atom - identifier of the register file id according to the data sheet
-% returns the corresponding header in binary format (1 byte long) 
-
 %% ---------------------------------------------------------------------------------------
 %% @private
-%% @doc Creates the header of the SPI communication between the GRiSP and the pmod
+%% @doc Creates the header of the SPI transaction between the GRiSP and the pmod
+%%
+%%  It creates a header of 1 bytes. The header is used in a transaction that will affect
+%%  the whole register file (read/write)
+%%
+%% @param Op an atom (either <i>read</i> or <i>write</i>
+%% @param RegFileID an atom representing the register file
+%% @returns a formated header of <b>1 byte</b> long as described in the user manual
 %% ---------------------------------------------------------------------------------------
 header(Op, RegFileID) ->
     <<(rw(Op)):1, 2#0:1, (regFile(RegFileID)):6>>.
-header(Op, RegFileID, SubRegister) ->
+
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% @doc Creates the header of the SPI transaction between the GRiSP and the pmod
+%%
+%%  It creates a header of 2 bytes. The header is used in a transaction that will affect
+%%  the whole sub-register (read/write)
+%%  Careful: The sub-register needs to be mapped in the hrl file
+%%
+%% @param Op an atom (either <i>read</i> or <i>write</i>
+%% @param RegFileID an atom representing the register file
+%% @param SubRegister an atom representing the sub-register
+%% @returns a formated header of <b>2 byte</b> long as described in the user manual
+%% ---------------------------------------------------------------------------------------
+header(Op, RegFileID, SubRegister) -> 
+    case subReg(SubRegister) < 127 of
+        true -> header(Op, RegFileID, SubRegister, 2);
+        _ -> header(Op, RegFileID, SubRegister, 3)
+    end.
+
+header(Op, RegFileID, SubRegister, 2) ->
     << (rw(Op)):1, 2#1:1, (regFile(RegFileID)):6,
-        2#0:1, (subReg(SubRegister)):7 >>.
+        2#0:1, (subReg(SubRegister)):7 >>;
+header(Op, RegFileID, SubRegister, 3) ->
+    <<_:1, HighOrder:8, LowOrder:7>> = <<(subReg(SubRegister)):16>>,
+    << (rw(Op)):1, 2#1:1, (regFile(RegFileID)):6,
+       2#1:1, LowOrder:7,
+       HighOrder:8>>.
 
 %% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Read the values stored in a register file
 %% ---------------------------------------------------------------------------------------
 read_reg(Bus, tx_buffer) -> error({read_write_only, Bus, tx_buffer});
+read_reg(Bus, lde_conf) -> read_reg(Bus, lde_if);
+read_reg(Bus, lde_if) ->
+    lists:foldl(fun(Elem, Acc) ->
+                    Res = read_sub_reg(Bus, lde_if, Elem),                
+                    maps:merge(Acc, Res)
+                end, 
+                #{}, 
+                [lde_thresh, lde_cfg1, lde_ppindx, lde_ppampl, lde_rxantd, lde_cfg2, lde_repc]);    
 read_reg(Bus, RegFileID) ->
     Header = header(read, RegFileID),
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, regSize(RegFileID)}]),
     % debug_read(RegFileID, Resp),
     reg(decode, RegFileID, Resp).
 
+
+read_sub_reg(Bus, RegFileID, SubRegister) ->
+    Header = header(read, RegFileID, SubRegister),
+    HeaderSize = byte_size(Header),
+    % io:format("[HEADER] type ~w - ~w - ~w~n", [HeaderSize, Header, subRegSize(SubRegister)]),
+[Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, HeaderSize, subRegSize(SubRegister)}]),
+    reg(decode, SubRegister, Resp).
+
 % TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
 %% ---------------------------------------------------------------------------------------
-%% write_reg/3 is used to write the values in the map given in the Value argument
+%% @doc used to write the values in the map given in the Value argument
 %% ---------------------------------------------------------------------------------------
+-spec write_reg(Bus::map(), RegFileID::regFileID(), Value::map()) -> ok | {error, any()}.
 write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
     maps:map(
         fun(SubRegister, Val) ->
@@ -1043,6 +1090,83 @@ reg(decode, otp_if, Resp) ->
     };
 % TODO: decode lde_if (a bit special with lots of offsets) + mnemonic not consistent within the user manual
 % reg(decode, lde_if, Resp) -> 
+reg(decode, lde_thresh, Resp) ->
+    <<
+      LDE_THRESH:16
+    >> = reverse(Resp),
+    #{
+      lde_thresh => LDE_THRESH
+    };
+reg(encode, lde_cfg1, Val) ->
+    #{
+      pmult := PMULT, ntm := NTM
+     } = Val,
+    reverse(<<
+        PMULT:3, NTM:5
+    >>);
+reg(decode, lde_cfg1, Resp) ->
+    <<
+      PMULT:3, NTM:5
+    >> = reverse(Resp),
+    #{
+      lde_cfg1 => #{pmult => PMULT, ntm => NTM}
+    };
+reg(decode, lde_ppindx, Resp) ->
+    <<
+      LDE_PPINDX:16
+    >> = reverse(Resp),
+    #{
+      lde_ppindx => LDE_PPINDX
+    };
+reg(decode, lde_ppampl, Resp) ->
+    <<
+      LDE_PPAMPL:16
+    >> = reverse(Resp),
+    #{
+      lde_ppampl => LDE_PPAMPL
+    };
+reg(encode, lde_rxantd, Val) ->
+    #{
+      lde_rxantd := LDE_RXANTD
+     } = Val,
+    reverse(<<
+        LDE_RXANTD:16 
+    >>);
+reg(decode, lde_rxantd, Resp) ->
+    <<
+      LDE_RXANTD:16
+    >> = reverse(Resp),
+    #{
+      lde_rxantd => LDE_RXANTD
+    };
+reg(encode, lde_cfg2, Val) ->
+    #{
+        lde_cfg2 := LDE_CFG2
+     } = Val,
+    reverse(<<
+        LDE_CFG2:16
+    >>);
+reg(decode, lde_cfg2, Resp) ->
+    <<
+      LDE_CFG2:16
+    >> = reverse(Resp),
+    #{
+      lde_cfg2 => LDE_CFG2
+    };
+reg(encode, lde_repc, Val) ->
+    #{
+        lde_repc := LDE_REPC
+     } = Val,
+    reverse(<<
+        LDE_REPC:16
+    >>);
+reg(decode, lde_repc, Resp) ->
+    <<
+      LDE_REPC:16
+    >> = reverse(Resp),
+    #{
+      lde_repc => LDE_REPC
+    };
 reg(encode, evc_ctrl, Val) ->
     #{
         evc_clr := EVC_CLR, evc_en := EVC_EN
