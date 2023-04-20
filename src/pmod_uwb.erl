@@ -97,6 +97,7 @@ init(Slot) ->
         ok -> write_default_values(Bus);
         Val -> error({dev_id_no_match, Val})
     end,
+    ldeload(Bus),
     {ok, #{bus => Bus}}.
     % TODO reset the DW1000 like in the code example
 
@@ -133,11 +134,22 @@ verify_id(Bus) ->
 write_default_values(Bus) ->
     write_reg(Bus, agc_ctrl, #{agc_tune1 => 16#8870, agc_tune2 => 16#2502A907}),
     write_reg(Bus, drx_conf, #{drx_tune2 => 16#311A002D}),
-    % write_reg(Bus, lde_if, #{ntm => 16#D, lde_cfg2 => 16#1607}),
+    write_reg(Bus, lde_if, #{ntm => 16#D, lde_cfg2 => 16#1607}),
     write_reg(Bus, tx_power, #{tx_power => 16#0E082848}),
     write_reg(Bus, rf_conf, #{rf_txctrl => 16#001E3FE3}),
     write_reg(Bus, tx_cal, #{tc_pgdelay => 16#B5}),
     write_reg(Bus, fs_ctrl, #{fs_plltune => 16#BE}).
+
+
+%% ---------------------------------------------------------------------------------------
+%% @docs Load the microcode from ROM to RAM
+%% It follows the steps described in section 2.5.5.10 of the DW1000 user manual
+%% ---------------------------------------------------------------------------------------
+ldeload(Bus) ->
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#1, sysclks => 2#1}}), % Writes 0x301 in pmsc_ctrl0
+    write_reg(Bus, otp_if, #{otp_ctrl => #{lde_load => 2#1}}), % Writes 0x8000 in OTP_CTRL
+    timer:sleep(150), % User manual requires a wait of 150µs
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#0, sysclks => 2#0}}).
 
 % Reverse the response of the pmod
 %% ---------------------------------------------------------------------------------------
@@ -1218,10 +1230,10 @@ reg(decode, dig_diag, Resp) ->
 reg(encode, pmsc_ctrl0, Val) ->
     #{
         softreset := SOFTRESET, pll2_seq_en := PLL2_SEQ_EN, khzclken := KHZCLKEN, gpdrn := GPDRN, gpdce := GPDCE, 
-        gprn := GPRN, gpce := GPCE, amce := AMCE, adcce := ADCCE, face := FACE, txclks := TXCLKS, rxclks := RXCLKS, sysclks := SYSCLKS
+        gprn := GPRN, gpce := GPCE, amce := AMCE, adcce := ADCCE, res8 := RES8 face := FACE, txclks := TXCLKS, rxclks := RXCLKS, sysclks := SYSCLKS % Here we need res8 for the initial config of the DW1000. We need to write it
      } = Val,
     reverse(<<
-        SOFTRESET:4, 2#000:3, PLL2_SEQ_EN:1, KHZCLKEN:1, 2#011:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, 2#0000:4, ADCCE:1, 2#100:3, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
+        SOFTRESET:4, 2#000:3, PLL2_SEQ_EN:1, KHZCLKEN:1, 2#011:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, 2#0000:4, ADCCE:1, 2#1:1, RES8:1, 2#0:1, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
     >>);
 reg(encode, pmsc_ctrl1, Val) ->
     #{
