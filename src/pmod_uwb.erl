@@ -7,7 +7,7 @@
 -export([init/1, handle_call/3, handle_cast/2]).
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, reception/0]).
 
--compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bistring_hex/1]).
+-compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
 
 % Define the polarity and the phase of the clock
 -define(SPI_MODE, #{clock => {low, leading}}).
@@ -115,9 +115,17 @@ get_received_data() -> call({get_rx_data}).
 %% ---------------------------------------------------------------------------------------
 -spec transmit(Data :: list() | bitstring()) -> ok | {error, any()}.
 transmit(Data) when is_list(Data) ->
-    call({transmit, list_to_binary(Data)});
+    transmit(list_to_binary(Data));
 transmit(Data) when is_bitstring(Data) ->
-    call({transmit, Data}).
+    call({transmit, Data}),
+    wait_for_txfrs().
+
+wait_for_txfrs() ->
+    io:format("Waiting for txfrs~n"),
+    case read(sys_status) of
+        #{txfrs := 2#0} -> wait_for_txfrs;
+        _ -> ok
+    end.
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
@@ -135,7 +143,7 @@ reception() ->
     enable_rx(),
     case wait_for_reception() of
         ok -> get_received_data();
-        _ -> error({reception_error})
+        Err -> error({reception_error, Err})
     end.
 
 %% @private
@@ -145,6 +153,10 @@ enable_rx() ->
 %% @private
 wait_for_reception() ->
     case read(sys_status) of 
+        #{rxphe := 1} -> rxphe;
+        #{rxfce := 1} -> rxfce;
+        % #{rxpto := 1} -> rxpto; % Remove the TO check for now. To see later (probably increase the RXFWTO later)
+        % #{rxsfdto := 1} -> rxsfdto;
         #{rxfcg := 0} -> wait_for_reception();
         #{rxfcg := 1} -> ok;
         _ -> error({error_wait_for_reception})
@@ -243,10 +255,7 @@ tx(Bus, Data) ->
     DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
     write_tx_data(Bus, Data),
     write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
-    write_reg(Bus, sys_ctrl, #{txstrt => 2#1}),
-    % TODO: Wait until bits are set to 1
-    #{txfrb := TXFRB, txprs := TXPRS, txphs := TXPHS} = read_reg(Bus, sys_status),
-    io:format("TXFRB: 2#~w | TXPRS: 2#~w | TXPHS: ~w ~n", [TXFRB, TXPRS, TXPHS]).
+    write_reg(Bus, sys_ctrl, #{txstrt => 2#1}).
 
 
 %% ---------------------------------------------------------------------------------------
