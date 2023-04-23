@@ -5,7 +5,9 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1, transmit/1, reception/0]).
+-export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, reception/0]).
+
+-compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bistring_hex/1]).
 
 % Define the polarity and the phase of the clock
 -define(SPI_MODE, #{clock => {low, leading}}).
@@ -72,7 +74,7 @@ write(RegFileID, Value) when is_map(Value) ->
     call({write, RegFileID, Value}).
 
 %% ---------------------------------------------------------------------------------------
-%% @doc Write the data in the TX_BUFFER register
+%% @doc Writes the data in the TX_BUFFER register
 %%
 %% Value is expected to be a <b>Binary</b>
 %% That choice was made to make the transmission of frames easier later on
@@ -86,12 +88,30 @@ write(RegFileID, Value) when is_map(Value) ->
 -spec write_tx_data(Value :: binary()) -> ok | {error, any()}.
 write_tx_data(Value) -> call({write_tx, Value}).
 
+%% ---------------------------------------------------------------------------------------
+%% @doc Retrieves the data received on the UWB antenna
+%% @returns {DataLength, Data}
+%% ---------------------------------------------------------------------------------------
+-spec get_received_data() -> {integer(), bitstring()} | {error, any()}.
+get_received_data() -> call({get_rx_data}).
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Transmit data
 %%
 %% Data can be either a String (e.g. "Hello world") or a bitstring (e.g. <<"Hello world">>
 %% This is to support frame transmission for later
+%% 
+%% === Examples ===
+%% To transmit a simple litteral string:
+%% ```
+%% 1> pmod_uwb:transmit("Hello world").
+%% ok.
+%% ''''
+%% 
+%% To transmit a frame:
+%% ```
+%% 2> pmod_uwb:transmit(<Version:4, NextHop:8>>).
+%% ok.
 %% ---------------------------------------------------------------------------------------
 -spec transmit(Data :: list() | bitstring()) -> ok | {error, any()}.
 transmit(Data) when is_list(Data) ->
@@ -101,10 +121,35 @@ transmit(Data) when is_bitstring(Data) ->
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
+%%
+%% The function will hang until a frame is received on the board
+%%
+%% === Example ===
+%% ```
+%% 1> pmod_uwb:reception().
+%% % Some frame is transmitted
+%% {11, <<"Hello world">>}.
+%% '''
 %% ---------------------------------------------------------------------------------------
 reception() -> 
-    call({reception}).
+    enable_rx(),
+    case wait_for_reception() of
+        ok -> get_received_data();
+        _ -> error({reception_error})
+    end.
 
+%% @private
+enable_rx() ->
+    call({write, sys_ctrl, #{rxenab => 2#1}}).
+
+%% @private
+wait_for_reception() ->
+    case read(sys_status) of 
+        #{rxfcg := 0} -> wait_for_reception();
+        #{rxfcg := 1} -> ok;
+        _ -> error({error_wait_for_reception})
+    end.
+    
 %--- Callbacks -----------------------------------------------------------------
 
 %% @private
@@ -130,7 +175,7 @@ handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg
 handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
 handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
 handle_call({transmit, Data}, _From, #{bus := Bus} = State) -> {reply, tx(Bus, Data), State};
-handle_call({reception}, _From, #{bus := Bus} = State) -> {reply, rx(Bus), State};
+handle_call({get_rx_data}, _From, #{bus := Bus} = State) -> {reply, get_rx_data(Bus), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
 
 %% @private
@@ -155,6 +200,7 @@ verify_id(Bus) ->
     end.
 
 %% ---------------------------------------------------------------------------------------
+%% @private
 %% Writes the default values described in section 2.5.5 of the user manual
 %% ---------------------------------------------------------------------------------------
 write_default_values(Bus) ->
@@ -194,10 +240,9 @@ ldeload(Bus) ->
 %% Transmit the data using UWB
 %% ---------------------------------------------------------------------------------------
 tx(Bus, Data) -> 
-    Frame = <<16#C5, 16#00, Data/bitstring>>,
-    FrameLength = byte_size(Frame) + 2, 
-    write_tx_data(Bus, Frame),
-    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => FrameLength}),
+    DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
+    write_tx_data(Bus, Data),
+    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1}),
     % TODO: Wait until bits are set to 1
     #{txfrb := TXFRB, txprs := TXPRS, txphs := TXPHS} = read_reg(Bus, sys_status),
@@ -205,29 +250,13 @@ tx(Bus, Data) ->
 
 
 %% ---------------------------------------------------------------------------------------
-%% Receive data through the DW1000 antenna
-%% ! Not complete yet (still need to check for errors e.g. reception of bad frames, ...)
+%% @private
+%% Get the received data stored in the rx_buffer
 %% ---------------------------------------------------------------------------------------
-rx(Bus) ->
-    enable_rx(Bus),
-    wait_for_reception(Bus),
+get_rx_data(Bus) ->
     #{rxflen := FrameLength} = read_reg(Bus, rx_finfo),
     Frame = read_rx_data(Bus, FrameLength),
     {FrameLength, Frame}.
-
-wait_for_reception(Bus) ->
-    case read_reg(Bus, sys_status) of
-        #{rxfcg := 0} -> wait_for_reception(Bus);
-        #{rxfcg := 1} -> ok;
-        _ -> error({error_wait_for_reception})
-    end.
-
-%% ---------------------------------------------------------------------------------------
-%% @private
-%% Enable the reception of frames
-%% ---------------------------------------------------------------------------------------
-enable_rx(Bus) -> 
-    write_reg(Bus, sys_ctrl, #{rxenab => 2#1}).
 
 %% ---------------------------------------------------------------------------------------
 %% @private
