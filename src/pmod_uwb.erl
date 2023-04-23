@@ -5,7 +5,7 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1]).
+-export([read/1, write/2, write_tx_data/1, transmit/1, reception/0]).
 
 % Define the polarity and the phase of the clock
 -define(SPI_MODE, #{clock => {low, leading}}).
@@ -74,13 +74,36 @@ write(RegFileID, Value) when is_map(Value) ->
 %% ---------------------------------------------------------------------------------------
 %% @doc Write the data in the TX_BUFFER register
 %%
+%% Value is expected to be a <b>Binary</b>
+%% That choice was made to make the transmission of frames easier later on
+%%
 %% === Examples ===
 %% Send "Hello" in the buffer
 %% ```
-%% 1> pmod_uwb:write_tx_data(<<"Hello"">>).
+%% 1> pmod_uwb:write_tx_data(<<"Hello">>).
 %% '''
+%% ---------------------------------------------------------------------------------------
 -spec write_tx_data(Value :: binary()) -> ok | {error, any()}.
 write_tx_data(Value) -> call({write_tx, Value}).
+
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Transmit data
+%%
+%% Data can be either a String (e.g. "Hello world") or a bitstring (e.g. <<"Hello world">>
+%% This is to support frame transmission for later
+%% ---------------------------------------------------------------------------------------
+-spec transmit(Data :: list() | bitstring()) -> ok | {error, any()}.
+transmit(Data) when is_list(Data) ->
+    call({transmit, list_to_binary(Data)});
+transmit(Data) when is_bitstring(Data) ->
+    call({transmit, Data}).
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Receive data using the pmod 
+%% ---------------------------------------------------------------------------------------
+reception() -> 
+    call({reception}).
 
 %--- Callbacks -----------------------------------------------------------------
 
@@ -98,6 +121,7 @@ init(Slot) ->
         Val -> error({dev_id_no_match, Val})
     end,
     ldeload(Bus),
+    config(Bus),
     {ok, #{bus => Bus}}.
     % TODO reset the DW1000 like in the code example
 
@@ -105,6 +129,8 @@ init(Slot) ->
 handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg(Bus, RegFileID), State};
 handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
 handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
+handle_call({transmit, Data}, _From, #{bus := Bus} = State) -> {reply, tx(Bus, Data), State};
+handle_call({reception}, _From, #{bus := Bus} = State) -> {reply, rx(Bus), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
 
 %% @private
@@ -140,9 +166,21 @@ write_default_values(Bus) ->
     write_reg(Bus, tx_cal, #{tc_pgdelay => 16#B5}),
     write_reg(Bus, fs_ctrl, #{fs_plltune => 16#BE}).
 
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% ---------------------------------------------------------------------------------------
+config(Bus) ->  
+    % Now enable RX and TX leds
+    write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp2 => 2#01, msgp3 => 2#01}}),
+    % Enable RXOK and SFD leds
+    write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp0 => 2#01, msgp1 => 2#01}}),
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{gpdce => 2#1, khzclken => 2#1}}),
+    write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}).
+    
 
 %% ---------------------------------------------------------------------------------------
-%% @docs Load the microcode from ROM to RAM
+%% @private
+%% Load the microcode from ROM to RAM
 %% It follows the steps described in section 2.5.5.10 of the DW1000 user manual
 %% ---------------------------------------------------------------------------------------
 ldeload(Bus) ->
@@ -151,7 +189,46 @@ ldeload(Bus) ->
     timer:sleep(150), % User manual requires a wait of 150µs
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#0, sysclks => 2#0}}). % Writes 0x0200 in pmsc_ctrl0
 
-% Reverse the response of the pmod
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% Transmit the data using UWB
+%% ---------------------------------------------------------------------------------------
+tx(Bus, Data) -> 
+    Frame = <<16#C5, 16#00, Data/bitstring>>,
+    FrameLength = byte_size(Frame) + 2, 
+    write_tx_data(Bus, Frame),
+    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => FrameLength}),
+    write_reg(Bus, sys_ctrl, #{txstrt => 2#1}),
+    % TODO: Wait until bits are set to 1
+    #{txfrb := TXFRB, txprs := TXPRS, txphs := TXPHS} = read_reg(Bus, sys_status),
+    io:format("TXFRB: 2#~w | TXPRS: 2#~w | TXPHS: ~w ~n", [TXFRB, TXPRS, TXPHS]).
+
+
+%% ---------------------------------------------------------------------------------------
+%% Receive data through the DW1000 antenna
+%% ! Not complete yet (still need to check for errors e.g. reception of bad frames, ...)
+%% ---------------------------------------------------------------------------------------
+rx(Bus) ->
+    enable_rx(Bus),
+    wait_for_reception(Bus),
+    #{rxflen := FrameLength} = read_reg(Bus, rx_finfo),
+    Frame = read_rx_data(Bus, FrameLength),
+    {FrameLength, Frame}.
+
+wait_for_reception(Bus) ->
+    case read_reg(Bus, sys_status) of
+        #{rxfcg := 0} -> wait_for_reception(Bus);
+        #{rxfcg := 1} -> ok;
+        _ -> error({error_wait_for_reception})
+    end.
+
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% Enable the reception of frames
+%% ---------------------------------------------------------------------------------------
+enable_rx(Bus) -> 
+    write_reg(Bus, sys_ctrl, #{rxenab => 2#1}).
+
 %% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Reverse the byte order of the bitstring given in the argument 
@@ -210,7 +287,7 @@ header(Op, RegFileID, SubRegister, 3) ->
 %% @doc Read the values stored in a register file
 %% ---------------------------------------------------------------------------------------
 read_reg(Bus, tx_buffer) -> error({read_write_only, Bus, tx_buffer});
-read_reg(Bus, lde_conf) -> read_reg(Bus, lde_if);
+read_reg(Bus, lde_ctrl) -> read_reg(Bus, lde_if);
 read_reg(Bus, lde_if) ->
     lists:foldl(fun(Elem, Acc) ->
                     Res = read_sub_reg(Bus, lde_if, Elem),                
@@ -229,8 +306,13 @@ read_sub_reg(Bus, RegFileID, SubRegister) ->
     Header = header(read, RegFileID, SubRegister),
     HeaderSize = byte_size(Header),
     % io:format("[HEADER] type ~w - ~w - ~w~n", [HeaderSize, Header, subRegSize(SubRegister)]),
-[Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, HeaderSize, subRegSize(SubRegister)}]),
+    [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, HeaderSize, subRegSize(SubRegister)}]),
     reg(decode, SubRegister, Resp).
+
+read_rx_data(Bus, Length) ->
+    Header = header(read, rx_buffer),
+    [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length-2}]), % Remove the CRC bytes from the read
+    reverse(Resp).
 
 % TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
@@ -242,12 +324,13 @@ write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
     maps:map(
         fun(SubRegister, Val) ->
             Header = header(write, RegFileID, SubRegister),
+            % io:format("Header: [~s]", [debug_bitstring(Header)]),
             CurrVal = maps:get(SubRegister, read_reg(Bus, RegFileID)), % ? can the read be done before ? Maybe but not assured that no values changes after a write in the register
             Body = case CurrVal of
                         V when is_map(V) -> reg(encode, SubRegister, maps:merge_with(fun(_Key, _Old, New) -> New end, CurrVal, Val));
                         _ -> reg(encode, SubRegister, #{SubRegister => Val})
                    end,
-            debug_write(RegFileID, Body),
+            % debug_write(RegFileID, SubRegister, Body),
             _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 2+subRegSize(SubRegister), 0}])
         end,
         Value),
@@ -258,7 +341,7 @@ write_reg(Bus, RegFileID, Value) ->
     % TODO: Check that a field isn't a read only sub-register, maybe use filter to check them
     ValuesToWrite = maps:merge_with(fun(_Key, _Value1, Value2) -> Value2 end, CurrVal, Value),
     Body = reg(encode, RegFileID, ValuesToWrite),
-    debug_write(RegFileID, Body),
+    % debug_write(RegFileID, Body),
     _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 1+regSize(RegFileID), 0}]),
     ok.
 
@@ -270,10 +353,11 @@ write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
     Header = header(write, tx_buffer),
     Body = reverse(Value),
     Length = byte_size(Value),
-    debug_write(tx_buffer, Body),
+    % debug_write(tx_buffer, Body),
     _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 1+Length, 0}]),
     ok.
 
+%% ----- Register mapping ----------------------------------------------------------------
 %% ---------------------------------------------------------------------------------------
 %% @doc Used to either decode the data returned by the pmod or to encode to data that will be sent to the pmod
 %% 
@@ -587,13 +671,20 @@ reg(encode, chan_ctrl, Val) ->
     reverse(<<
         RX_PCODE:5, TX_PCODE:5, RNSSFD:1, TNSSFD:1, RXPRF:2, DWSFD:1, Reserved0:9, RX_CHAN:4, TX_CHAN:4 
     >>);
-% ! register names differ from user manual where some names are duplicated
-% TODO: Decode that register
+reg(encode, usr_sfd, Value) ->
+    #{
+      usr_sfd := USR_SFD
+     } = Value,
+    reverse(<<
+        USR_SFD:(8*41)
+    >>);
 reg(decode, usr_sfd, Resp) ->
     <<
-        _:(8*41)
-    >> = Resp,
-    #{};
+        USR_SFD:(8*41)
+    >> = reverse(Resp),
+    #{
+      usr_sfd => USR_SFD
+     };
 % AGC_CTRL is a complex register with reserved bits that can't be written
 reg(encode, agc_ctrl1, Val) ->
     #{
@@ -665,7 +756,7 @@ reg(decode, acc_mem, Resp) ->
     #{
         acc_mem => reverse(Resp)
     };
-reg(encode, gpio_imode, Val) ->
+reg(encode, gpio_mode, Val) ->
     #{
       msgp8 := MSGP8, msgp7 := MSGP7, msgp6 := MSGP6, msgp5 := MSGP5, msgp4 := MSGP4, msgp3 := MSGP3, msgp2 := MSGP2, msgp1 := MSGP1, msgp0 := MSGP0
      } = Val,
@@ -1258,28 +1349,28 @@ reg(encode, pmsc_txfseq, Val) ->
     >>);
 reg(encode, pmsc_ledc, Val) ->
     #{
-        blnknow := BLNKNOW, blnken := BLNKEN, blink_tim := BLINK_TIM
+        res31 := RES31, blnknow := BLNKNOW, res15 := RES15, blnken := BLNKEN, blink_tim := BLINK_TIM
      } = Val,
     reverse(<<
-        2#0:12, BLNKNOW:4, 2#0:7, BLNKEN:1, BLINK_TIM:8 % PMSC_LEDC
+        RES31:12, BLNKNOW:4, RES15:7, BLNKEN:1, BLINK_TIM:8 % PMSC_LEDC
     >>);
 reg(decode, pmsc, Resp) ->
     % User manual says: reserved bits should be preserved at their reset value => can hardcode their values ? Safe to do that ?
     <<
-        _:12, BLNKNOW:4, _:7, BLNKEN:1, BLINK_TIM:8, % PMSC_LEDC
+        Res31:12, BLNKNOW:4, Res15:7, BLNKEN:1, BLINK_TIM:8, % PMSC_LEDC
         TXFINESEQ:16, % PMSC_TXFINESEQ
         _:(22*8), % Reserved 2
         SNOZ_TIM:8, % PMSC_SNOZT
         _:32, % Reserved 1
         KHZCLKDIV:6, _:8, LDERUNE:1, _:1, PLLSYN:1, SNOZR:1, SNOZE:1, ARXSLP:1, ATXSLP:1, PKTSEQ:8, _:1, ARX2INIT:1, _:1, % PMSC_CTRL1
-        SOFTRESET:4, _:3, PLL2_SEQ_EN:1, KHZCLKEN:1, _:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, _:4, ADCCE:1, _:3, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
+        SOFTRESET:4, _:3, PLL2_SEQ_EN:1, KHZCLKEN:1, _:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, _:4, ADCCE:1, _:1, RES8:1, _:1, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
     >> = reverse(Resp),
     #{
-        pmsc_ledc => #{blnknow => BLNKNOW, blnken => BLNKEN, blink_tim => BLINK_TIM},
+        pmsc_ledc => #{res31 => Res31, blnknow => BLNKNOW, res15 => Res15, blnken => BLNKEN, blink_tim => BLINK_TIM},
         pmsc_txfseq => #{txfineseq => TXFINESEQ},
         pmsc_snozt => #{snoz_tim => SNOZ_TIM},
         pmsc_ctrl1 => #{khzclkdiv => KHZCLKDIV, lderune => LDERUNE, pllsyn => PLLSYN, snozr => SNOZR, snoze => SNOZE, arxslp => ARXSLP, atxslp => ATXSLP, pktseq => PKTSEQ, arx2init => ARX2INIT},
-        pmsc_ctrl0 => #{softreset => SOFTRESET, pll2_seq_en => PLL2_SEQ_EN, khzclken => KHZCLKEN, gpdrn => GPDRN, gpdce => GPDCE, gprn => GPRN, gpce => GPCE, amce => AMCE, adcce => ADCCE, face => FACE, txclks => TXCLKS, rxclks => RXCLKS, sysclks => SYSCLKS}
+        pmsc_ctrl0 => #{softreset => SOFTRESET, pll2_seq_en => PLL2_SEQ_EN, khzclken => KHZCLKEN, gpdrn => GPDRN, gpdce => GPDCE, gprn => GPRN, gpce => GPCE, amce => AMCE, adcce => ADCCE, res8 => RES8, face => FACE, txclks => TXCLKS, rxclks => RXCLKS, sysclks => SYSCLKS}
     };
 reg(decode, RegFile, Resp) -> error({unknown_regfile_to_decode, RegFile, Resp});
 reg(encode, RegFile, Resp) -> error({unknown_regfile_to_encode, RegFile, Resp}).
@@ -1294,6 +1385,10 @@ debug_read(Reg, Value) ->
 debug_write(Reg, Value) ->
     io:format("[PmodUWB] write [16#~2.16.0B - ~w] --> ~s -> ~s~n",
         [regFile(Reg), Reg, debug_bitstring(Value), debug_bitstring_hex(Value)]
+    ).
+debug_write(Reg, SubReg, Value) ->
+    io:format("[PmodUWB] write [16#~2.16.0B - ~w - 16#~2.16.0B - ~w] --> ~s -> ~s~n",
+        [regFile(Reg), Reg, subReg(SubReg), SubReg, debug_bitstring(Value), debug_bitstring_hex(Value)]
     ).
 
 debug_bitstring(Bitstring) ->

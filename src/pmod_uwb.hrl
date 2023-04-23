@@ -1,3 +1,4 @@
+% % TODO
 % map the r/w bit of the transaction header
 rw(read) -> 0;
 rw(write) -> 1.
@@ -185,6 +186,7 @@ regSize(fs_ctrl) -> 21;
 regSize(aon) -> 12;
 regSize(otp_if) -> 19; % user manual gives 18 bytes in regs table but sum of all sub regs is 19 bytes
 regSize(lde_ctrl) -> undefined; % No size ?
+regSize(lde_if) -> undefined; % No size ?
 regSize(dig_diag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
 regSize(pmsc) -> 41. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
 
