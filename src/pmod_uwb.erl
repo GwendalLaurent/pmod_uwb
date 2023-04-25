@@ -5,7 +5,8 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, reception/0]).
+-export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit_and_wait_for_resp/1, transmit_and_wait_for_resp/2, reception/0]).
+-export([softreset/0]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
 
@@ -37,6 +38,7 @@ start_link(Connector, _Opts) ->
 %% 1> pmod_uwb:read(dev_id).
 %% #{model => 1,rev => 0,ridtag => "DECA",ver => 3}
 %% '''
+%% @end
 %% ---------------------------------------------------------------------------------------
 -spec read(RegFileID :: regFileID()) -> map() | {error, any()}.
 read(RegFileID) -> call({read, RegFileID}).
@@ -66,6 +68,7 @@ read(RegFileID) -> call({read, RegFileID}).
 %% ```
 %% 4> pmod_uwb:write(agc_ctrl, #{agc_ctrl1 => #{dis_am => 2#0}}).
 %% '''
+%% @end
 %% ---------------------------------------------------------------------------------------
 -spec write(RegFileID :: regFileID(), Value :: map()) -> ok | {error, any()}.
 write(RegFileID, Value) when ?READ_ONLY_REG_FILE(RegFileID) ->
@@ -84,6 +87,7 @@ write(RegFileID, Value) when is_map(Value) ->
 %% ```
 %% 1> pmod_uwb:write_tx_data(<<"Hello">>).
 %% '''
+%% @end
 %% ---------------------------------------------------------------------------------------
 -spec write_tx_data(Value :: binary()) -> ok | {error, any()}.
 write_tx_data(Value) -> call({write_tx, Value}).
@@ -91,6 +95,7 @@ write_tx_data(Value) -> call({write_tx, Value}).
 %% ---------------------------------------------------------------------------------------
 %% @doc Retrieves the data received on the UWB antenna
 %% @returns {DataLength, Data}
+%% @end
 %% ---------------------------------------------------------------------------------------
 -spec get_received_data() -> {integer(), bitstring()} | {error, any()}.
 get_received_data() -> call({get_rx_data}).
@@ -98,7 +103,7 @@ get_received_data() -> call({get_rx_data}).
 %% ---------------------------------------------------------------------------------------
 %% @doc Transmit data
 %%
-%% Data can be either a String (e.g. "Hello world") or a bitstring (e.g. <<"Hello world">>
+%% Data can be either a String (e.g. "Hello world") or a bitstring
 %% This is to support frame transmission for later
 %% 
 %% === Examples ===
@@ -112,6 +117,8 @@ get_received_data() -> call({get_rx_data}).
 %% ```
 %% 2> pmod_uwb:transmit(<Version:4, NextHop:8>>).
 %% ok.
+%% '''
+%% @end
 %% ---------------------------------------------------------------------------------------
 -spec transmit(Data :: list() | bitstring()) -> ok | {error, any()}.
 transmit(Data) when is_list(Data) ->
@@ -127,6 +134,28 @@ wait_for_txfrs() ->
         _ -> ok
     end.
 
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Transmit the data and automatically wait for a response
+%% @equiv transmit_and_wait_for_resp(Data, 0)
+%% @end
+%% ---------------------------------------------------------------------------------------
+-spec transmit_and_wait_for_resp(Data :: list() | bitstring()) -> ok | {error, any()}.
+transmit_and_wait_for_resp(Data) ->
+    transmit_and_wait_for_resp(Data, 0).
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Transmit the data and automatically wait for a response
+%% @param W4R_TIME: specifies the amount of µs before RX is turned on after the transmission
+%% @end
+%% ---------------------------------------------------------------------------------------
+-spec transmit_and_wait_for_resp(Data :: list() | bitstring(), integer()) -> ok | {error, any()}.
+transmit_and_wait_for_resp(Data, W4R_TIME) -> 
+    write(sys_ctrl, #{wait4resp => 2#1}),
+    write(ack_resp_t, #{w4r_tim => W4R_TIME}), % W4R_TIME ms before the RX to be enabled after TX
+    transmit(Data),
+    reception().
+
 %% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
 %%
@@ -138,6 +167,7 @@ wait_for_txfrs() ->
 %% % Some frame is transmitted
 %% {11, <<"Hello world">>}.
 %% '''
+%% @end
 %% ---------------------------------------------------------------------------------------
 reception() -> 
     enable_rx(),
@@ -155,12 +185,24 @@ wait_for_reception() ->
     case read(sys_status) of 
         #{rxphe := 1} -> rxphe;
         #{rxfce := 1} -> rxfce;
-        % #{rxpto := 1} -> rxpto; % Remove the TO check for now. To see later (probably increase the RXFWTO later)
-        % #{rxsfdto := 1} -> rxsfdto;
-        #{rxfcg := 0} -> wait_for_reception();
-        #{rxfcg := 1} -> ok;
+        #{rxpto := 1} -> rxpto; % Remove the TO check for now. To see later (probably increase the RXFWTO later)
+        #{rxsfdto := 1} -> rxsfdto;
+        % #{ldeerr := 1} -> ldeerr;
+        #{rxdfr := 0} -> wait_for_reception();
+        #{rxdfr := 1} -> ok;
         _ -> error({error_wait_for_reception})
     end.
+
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Performs a reset of the IC following the procedure described in section 7.2.50.1 
+%%
+%% @end
+%% ---------------------------------------------------------------------------------------
+softreset() -> 
+    write(pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
+    write(pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
+    write(pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
     
 %--- Callbacks -----------------------------------------------------------------
 
@@ -233,7 +275,10 @@ config(Bus) ->
     % Enable RXOK and SFD leds
     write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp0 => 2#01, msgp1 => 2#01}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{gpdce => 2#1, khzclken => 2#1}}),
-    write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}).
+    write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}),
+    write_reg(Bus, dig_diag, #{evc_ctrl => #{evc_en => 2#1}}). % enable counting event for debug purposes
+    % write_reg(Bus, sys_cfg, #{rxwtoe => 2#1}),
+    % write_reg(Bus, rx_fwto, #{rxfwto => 5000}). % TO of 5 sec
     
 
 %% ---------------------------------------------------------------------------------------
@@ -426,11 +471,11 @@ reg(decode, panadr, Resp) ->
         PanId:16, ShortAddr:16
     >> = reverse(Resp),
     #{
-        panid => PanId, shortaddr => ShortAddr
+        pan_id => PanId, short_addr => ShortAddr
     };
 reg(encode, panadr, Val) ->
     #{
-        panid := PanId, shortaddr := ShortAddr
+        pan_id := PanId, short_addr := ShortAddr
     } = Val,
     reverse(<<
         PanId:16, ShortAddr:16
@@ -562,29 +607,29 @@ reg(decode, sys_status, Resp) ->
     <<
         TXFRS:1, TXPHS:1, TXPRS:1, TXFRB:1, AAT:1, ESYNCR:1, CPLOCK:1, IRQS:1, % bits 7-0
         RXFCE:1, RXFCG:1, RXDFR:1, RXPHE:1, RXPHD:1, LDEDONE:1, RXSFDD:1, RXPRD:1, % bits 15-8
-        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, Reserved0:1, LDEERR:1, RXRFTO:1, RXRFLS:1, % bits 23-16
+        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, Reserved0:1, LDEERR:1, RXRFTO:1, RXRFSL:1, % bits 23-16
         ICRBP:1, HSRBP:1, AFFREJ:1, TXBERR:1, HPDWARN:1, RXSFDTO:1, CLCKPLL_LL:1, RFPLL_LL:1, % bits 31-24
         Reserved1:5, TXPUTE:1, RXPREJ:1, RXRSCS:1 % bits 39-32
     >> = Resp,
     #{
         txfrs => TXFRS, txphs => TXPHS, txprs => TXPRS, txfrb => TXFRB, aat => AAT, esyncr => ESYNCR, cplock => CPLOCK, irqs => IRQS, % bits 7-0
-        rxfce => RXFCE, rxfcg => RXFCG, rxdfr => RXDFR, rxhe => RXPHE, rxhd => RXPHD, ldeone => LDEDONE, rxsfdd => RXSFDD, rxprd => RXPRD, % bits 15-8
-        splt2init => SPL2INIT, gpioirq => GPIOIRQ, rxpto => RXPTO, rxovrr => RXOVRR, res0 => Reserved0, ldeerr => LDEERR, rxrfto => RXRFTO, rxrfls => RXRFLS, % bits 23-16
+        rxfce => RXFCE, rxfcg => RXFCG, rxdfr => RXDFR, rxphe => RXPHE, rxphd => RXPHD, ldedone => LDEDONE, rxsfdd => RXSFDD, rxprd => RXPRD, % bits 15-8
+        splt2init => SPL2INIT, gpioirq => GPIOIRQ, rxpto => RXPTO, rxovrr => RXOVRR, res0 => Reserved0, ldeerr => LDEERR, rxrfto => RXRFTO, rxrfsl => RXRFSL, % bits 23-16
         icrbp => ICRBP, hsrbp => HSRBP, affrej => AFFREJ, txberr => TXBERR, hdpwarn => HPDWARN, rxsfdto => RXSFDTO, clkpll_ll => CLCKPLL_LL, rfpll_ll => RFPLL_LL, % bits 31-24
         res1 => Reserved1, txpute => TXPUTE, rxprej => RXPREJ, rxrscs => RXRSCS
     };
 reg(encode, sys_status, Val) ->
     #{
         txfrs := TXFRS, txphs := TXPHS, txprs := TXPRS, txfrb := TXFRB, aat := AAT, esyncr := ESYNCR, cplock := CPLOCK, irqs := IRQS, % bits 7-0
-        rxfce := RXFCE, rxfcg := RXFCG, rxdfr := RXDFR, rxhe := RXPHE, rxhd := RXPHD, ldeone := LDEDONE, rxsfdd := RXSFDD, rxprd := RXPRD, % bits 15-8
-        splt2init := SPL2INIT, gpioirq := GPIOIRQ, rxpto := RXPTO, rxovrr := RXOVRR, res0 := Reserved0, ldeerr := LDEERR, rxrfto := RXRFTO, rxrfls := RXRFLS, % bits 23-16
+        rxfce := RXFCE, rxfcg := RXFCG, rxdfr := RXDFR, rxphe := RXPHE, rxphd := RXPHD, ldedone := LDEDONE, rxsfdd := RXSFDD, rxprd := RXPRD, % bits 15-8
+        splt2init := SPL2INIT, gpioirq := GPIOIRQ, rxpto := RXPTO, rxovrr := RXOVRR, res0 := Reserved0, ldeerr := LDEERR, rxrfto := RXRFTO, rxrfsl := RXRFSL, % bits 23-16
         icrbp := ICRBP, hsrbp := HSRBP, affrej := AFFREJ, txberr := TXBERR, hdpwarn := HPDWARN, rxsfdto := RXSFDTO, clkpll_ll := CLCKPLL_LL, rfpll_ll := RFPLL_LL, % bits 31-24
         res1 := Reserved1, txpute := TXPUTE, rxprej := RXPREJ, rxrscs := RXRSCS
     } = Val,
     <<
         TXFRS:1, TXPHS:1, TXPRS:1, TXFRB:1, AAT:1, ESYNCR:1, CPLOCK:1, IRQS:1, % bits 7-0
         RXFCE:1, RXFCG:1, RXDFR:1, RXPHE:1, RXPHD:1, LDEDONE:1, RXSFDD:1, RXPRD:1, % bits 15-8
-        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, Reserved0:1, LDEERR:1, RXRFTO:1, RXRFLS:1, % bits 23-16
+        SPL2INIT:1, GPIOIRQ:1, RXPTO:1, RXOVRR:1, Reserved0:1, LDEERR:1, RXRFTO:1, RXRFSL:1, % bits 23-16
         ICRBP:1, HSRBP:1, AFFREJ:1, TXBERR:1, HPDWARN:1, RXSFDTO:1, CLCKPLL_LL:1, RFPLL_LL:1, % bits 31-24
         Reserved1:5, TXPUTE:1, RXPREJ:1, RXRSCS:1 % bits 39-32
     >>;
