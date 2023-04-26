@@ -4,6 +4,7 @@
 -behavior(application).
 
 -export([send_and_wait_ack/1, receive_and_ack/0, receive_data/0]).
+-export([test_receiver/0, test_sender/0]).
 
 % Callbacks
 -export([start/2]).
@@ -32,6 +33,24 @@ receive_data() ->
     {Length, Data} = pmod_uwb:reception(),
     io:format("Received data with length: ~w~n", [Length]),
     binary_to_list(Data).
+
+
+test_receiver() -> receive_data(100).
+
+test_sender() -> send_data(0, 100).
+
+%--- Private -------------------------------------------------------------------
+receive_data(0) -> ok;
+receive_data(N) ->
+    Received = receive_data(),
+    io:format("~w~n", [Received]),
+    receive_data(N-1).
+
+send_data(Max, Max) -> ok;
+send_data(Cnt, Max) ->
+    pmod_uwb:transmit(<<16#5C, Cnt, (list_to_binary("Data"))/bitstring>>),
+    timer:sleep(50),
+    send_data(Cnt+1, Max).
 
 %--- Callbacks -----------------------------------------------------------------
 

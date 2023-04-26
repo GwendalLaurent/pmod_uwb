@@ -122,17 +122,9 @@ get_received_data() -> call({get_rx_data}).
 %% ---------------------------------------------------------------------------------------
 -spec transmit(Data :: list() | bitstring()) -> ok | {error, any()}.
 transmit(Data) when is_list(Data) ->
-    transmit(list_to_binary(Data));
+    transmit(<<16#5C, 0, (list_to_binary(Data))/bitstring>>);
 transmit(Data) when is_bitstring(Data) ->
-    call({transmit, Data}),
-    wait_for_txfrs().
-
-wait_for_txfrs() ->
-    io:format("Waiting for txfrs~n"),
-    case read(sys_status) of
-        #{txfrs := 2#0} -> wait_for_txfrs;
-        _ -> ok
-    end.
+    call({transmit, Data}).
 
 
 %% ---------------------------------------------------------------------------------------
@@ -187,7 +179,8 @@ wait_for_reception() ->
         #{rxfce := 1} -> rxfce;
         #{rxpto := 1} -> rxpto; % Remove the TO check for now. To see later (probably increase the RXFWTO later)
         #{rxsfdto := 1} -> rxsfdto;
-        % #{ldeerr := 1} -> ldeerr;
+        #{ldeerr := 1} -> ldeerr;
+        #{affrej := 1} -> affrej;
         #{rxdfr := 0} -> wait_for_reception();
         #{rxdfr := 1} -> ok;
         _ -> error({error_wait_for_reception})
@@ -219,7 +212,7 @@ init(Slot) ->
         ok -> write_default_values(Bus);
         Val -> error({dev_id_no_match, Val})
     end,
-    ldeload(Bus),
+    % ldeload(Bus),
     config(Bus),
     {ok, #{bus => Bus}}.
     % TODO reset the DW1000 like in the code example
@@ -269,13 +262,14 @@ write_default_values(Bus) ->
 %% ---------------------------------------------------------------------------------------
 %% @private
 %% ---------------------------------------------------------------------------------------
-config(Bus) ->  
+config(Bus) ->
+    write_reg(Bus, pmsc, #{pmsc_ctrl1 => #{lderune => 2#0}}),
     % Now enable RX and TX leds
     write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp2 => 2#01, msgp3 => 2#01}}),
     % Enable RXOK and SFD leds
     write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp0 => 2#01, msgp1 => 2#01}}),
-    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{gpdce => 2#1, khzclken => 2#1}}),
-    write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}),
+    % write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{gpdce => 2#1, khzclken => 2#1}}),
+    % write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}),
     write_reg(Bus, dig_diag, #{evc_ctrl => #{evc_en => 2#1}}). % enable counting event for debug purposes
     % write_reg(Bus, sys_cfg, #{rxwtoe => 2#1}),
     % write_reg(Bus, rx_fwto, #{rxfwto => 5000}). % TO of 5 sec
@@ -300,7 +294,7 @@ tx(Bus, Data) ->
     DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
     write_tx_data(Bus, Data),
     write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
-    write_reg(Bus, sys_ctrl, #{txstrt => 2#1}).
+    write_reg(Bus, sys_ctrl, #{txstrt => 2#1}). % start transmission
 
 
 %% ---------------------------------------------------------------------------------------
@@ -395,7 +389,7 @@ read_sub_reg(Bus, RegFileID, SubRegister) ->
 read_rx_data(Bus, Length) ->
     Header = header(read, rx_buffer),
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length-2}]), % Remove the CRC bytes from the read
-    reverse(Resp).
+    Resp.
 
 % TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
@@ -434,10 +428,9 @@ write_reg(Bus, RegFileID, Value) ->
 %% ---------------------------------------------------------------------------------------
 write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
     Header = header(write, tx_buffer),
-    Body = reverse(Value),
     Length = byte_size(Value),
     % debug_write(tx_buffer, Body),
-    _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 1+Length, 0}]),
+    _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Value/binary>>, 1+Length, 0}]),
     ok.
 
 %% ----- Register mapping ----------------------------------------------------------------

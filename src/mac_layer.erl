@@ -16,8 +16,12 @@ mac_message(data, Data, AR, Seqnum, DestPAN, DestAddr, SrcPAN, SrcAddr) ->
 
 %--- Internal ------------------------------------------------------------------
 
-mac_header(FrameControl, Seqnum, DestPAN, DestAddr, SrcPAN, SrcAddr) ->
-    <<FrameControl:16/bitstring, Seqnum:8, DestPAN:16, DestAddr:16, SrcPAN:16, SrcAddr:16>>.
+mac_header(FrameControl, Seqnum, DestPAN, DestAddr, _SrcPAN, SrcAddr) ->
+    <<FrameControl:16/bitstring, Seqnum:8, DestPAN:16, DestAddr:16, SrcAddr:16>>.
 
 frame_control(FrameType, AR) ->
-    <<FrameType:3, 2#0:1, 2#0:1, AR:1, 2#0:1, 2#0:3, 2#10:2, 2#01:2, 2#10>>.
+    % <<FrameType:3, 2#0:1, 2#0:1, AR:1, 2#0:1, 2#0:3, 2#10:2, 2#01:2, 2#10>>.
+    % << SrcAddrMode, FrameVer, DestAddrMode, RSV, PANID comp, AR, Frame pending, Sec en, Frame type>>
+    % <<2#10:2, 2#00:2, 2#10:2, 2#000:3, 2#0:1, AR:1, 2#0:1, 2#0:1, FrameType:3>>.
+    % <<16#8861:16>>.
+    <<16#6188:16>>.
