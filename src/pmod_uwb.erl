@@ -177,7 +177,8 @@ wait_for_reception() ->
     case read(sys_status) of 
         #{rxphe := 1} -> rxphe;
         #{rxfce := 1} -> rxfce;
-        #{rxpto := 1} -> rxpto; % Remove the TO check for now. To see later (probably increase the RXFWTO later)
+        #{rxrfsl := 1} -> rxrfsl;
+        #{rxpto := 1} -> rxpto; 
         #{rxsfdto := 1} -> rxsfdto;
         #{ldeerr := 1} -> ldeerr;
         #{affrej := 1} -> affrej;
@@ -214,6 +215,7 @@ init(Slot) ->
     end,
     % ldeload(Bus),
     config(Bus),
+    setup_sfd(Bus),
     {ok, #{bus => Bus}}.
     % TODO reset the DW1000 like in the code example
 
@@ -268,11 +270,12 @@ config(Bus) ->
     write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp2 => 2#01, msgp3 => 2#01}}),
     % Enable RXOK and SFD leds
     write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp0 => 2#01, msgp1 => 2#01}}),
-    % write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{gpdce => 2#1, khzclken => 2#1}}),
-    % write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}),
-    write_reg(Bus, dig_diag, #{evc_ctrl => #{evc_en => 2#1}}). % enable counting event for debug purposes
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{gpdce => 2#1, khzclken => 2#1}}),
+    write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}),
+    write_reg(Bus, dig_diag, #{evc_ctrl => #{evc_en => 2#1}}), % enable counting event for debug purposes
     % write_reg(Bus, sys_cfg, #{rxwtoe => 2#1}),
     % write_reg(Bus, rx_fwto, #{rxfwto => 5000}). % TO of 5 sec
+    write_reg(Bus, tx_fctrl, #{txpsr => 2#10}). % Setting preamble symbols to 1024
     
 
 %% ---------------------------------------------------------------------------------------
@@ -285,6 +288,15 @@ ldeload(Bus) ->
     write_reg(Bus, otp_if, #{otp_ctrl => #{lde_load => 2#1}}), % Writes 0x8000 in OTP_CTRL
     timer:sleep(150), % User manual requires a wait of 150µs
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#0, sysclks => 2#0}}). % Writes 0x0200 in pmsc_ctrl0
+
+
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% If no frame is transmitted before AUTOACK, then the SFD isn't properly set
+%% (cf. section 5.3.1.2 SFD initialisation)
+%% ---------------------------------------------------------------------------------------
+setup_sfd(Bus) ->
+    write_reg(Bus, sys_ctrl, #{txstrt => 2#1, trxoff => 2#1}).
 
 %% ---------------------------------------------------------------------------------------
 %% @private
