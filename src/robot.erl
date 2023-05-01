@@ -6,7 +6,7 @@
 -include("mac_layer.hrl").
 
 -export([send_and_wait_ack/1, receive_and_ack/0, receive_data/0]).
--export([test_receiver/0, test_sender/0]).
+-export([test_receiver/0, test_sender/0, test_sender_ack/0, test_receiver_ack/0]).
 
 % Callbacks
 -export([start/2]).
@@ -31,7 +31,7 @@ send_and_wait_ack(Data) ->
     io:format("Received ACK ?~n").
 
 receive_and_ack() ->
-    pmod_uwb:write(sys_cfg, #{ffad => 2#1, ffaa => 2#1, autoack => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
+    pmod_uwb:write(sys_cfg, #{ffad => 2#1, ffaa => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
     pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
     receive_data().
     
@@ -46,6 +46,15 @@ test_receiver() -> receive_data(100).
 
 test_sender() -> send_data(0, 100).
 
+test_receiver_ack() ->
+    pmod_uwb:write(sys_cfg, #{ffad => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
+    pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
+    receive_data(100).
+
+test_sender_ack() ->
+    #{short_addr := SrcAddr} = pmod_uwb:read(panadr),
+    send_data_wait_ack(0, 100, SrcAddr).
+
 %--- Private -------------------------------------------------------------------
 receive_data(0) -> ok;
 receive_data(N) ->
@@ -58,6 +67,19 @@ send_data(Cnt, Max) ->
     pmod_uwb:transmit(<<16#5C, Cnt, (list_to_binary("Data"))/bitstring>>),
     timer:sleep(50),
     send_data(Cnt+1, Max).
+
+send_data_wait_ack(Max, Max, _) -> ok;
+send_data_wait_ack(Cnt, Max, SrcAddr) ->
+    FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED},
+    MacHeader = #mac_header{seqnum = Cnt, dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_addr = <<SrcAddr:16>>},
+    MacMessage = mac_layer:mac_message(FrameControl, MacHeader, <<"Data">>),
+    io:format("Sending message #~w~n", [Cnt]),
+    pmod_uwb:transmit(MacMessage),
+    {_Length, _Data} = pmod_uwb:reception(),
+    io:format("Received Ack~n"),
+    timer:sleep(50),
+    send_data_wait_ack(Cnt+1, Max, SrcAddr).
+
 
 %--- Callbacks -----------------------------------------------------------------
 
