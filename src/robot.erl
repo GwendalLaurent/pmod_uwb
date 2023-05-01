@@ -3,6 +3,8 @@
 
 -behavior(application).
 
+-include("mac_layer.hrl").
+
 -export([send_and_wait_ack/1, receive_and_ack/0, receive_data/0]).
 -export([test_receiver/0, test_sender/0]).
 
@@ -15,10 +17,15 @@
 
 send_and_wait_ack(Data) ->
     #{pan_id := SrcPAN, short_addr := SrcAddr} = pmod_uwb:read(panadr),
-    Mac = mac_layer:mac_message(data, Data, 2#1, 0, 16#FFFF, 16#FFFF, SrcPAN, SrcAddr),
+
+    FrameControl = #frame_control{ack_req = ?ENABLED},
+    MacHeader = #mac_header{dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_pan = <<SrcPAN:16>>, src_addr = <<SrcAddr:16>>},
+    Mac = mac_layer:mac_message(FrameControl, MacHeader, Data),
     io:format("~w~n", [Mac]),
+
     pmod_uwb:write(sys_cfg, #{ffen => 2#1, ffaa => 2#1, autoack => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
     pmod_uwb:transmit(Mac),
+
     io:format("Waiting for ACK~n"),
     {_Length, _Data} = pmod_uwb:reception(),
     io:format("Received ACK ?~n").
