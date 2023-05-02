@@ -210,14 +210,14 @@ init(Slot) ->
     grisp_devices:register(Slot, ?MODULE),
     Bus = grisp_spi:open(Slot),
     case verify_id(Bus) of
-        ok -> write_default_values(Bus);
+        ok -> softrest(Bus);
         Val -> error({dev_id_no_match, Val})
     end,
-    % ldeload(Bus),
+    ldeload(Bus),
+    write_default_values(Bus),
     config(Bus),
     setup_sfd(Bus),
     {ok, #{bus => Bus}}.
-    % TODO reset the DW1000 like in the code example
 
 %% @private
 handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg(Bus, RegFileID), State};
@@ -250,12 +250,21 @@ verify_id(Bus) ->
 
 %% ---------------------------------------------------------------------------------------
 %% @private
+%% Performs a softreset on the pmod
+%% ---------------------------------------------------------------------------------------
+softrest(Bus) ->
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
+
+%% ---------------------------------------------------------------------------------------
+%% @private
 %% Writes the default values described in section 2.5.5 of the user manual
 %% ---------------------------------------------------------------------------------------
 write_default_values(Bus) ->
+    write_reg(Bus, lde_if, #{lde_cfg1 => #{ntm => 16#D}, lde_cfg2 => 16#1607}),
     write_reg(Bus, agc_ctrl, #{agc_tune1 => 16#8870, agc_tune2 => 16#2502A907}),
     write_reg(Bus, drx_conf, #{drx_tune2 => 16#311A002D}),
-    write_reg(Bus, lde_if, #{lde_cfg1 => #{ntm => 16#D}, lde_cfg2 => 16#1607}),
     write_reg(Bus, tx_power, #{tx_power => 16#0E082848}),
     write_reg(Bus, rf_conf, #{rf_txctrl => 16#001E3FE3}),
     write_reg(Bus, tx_cal, #{tc_pgdelay => 16#B5}),
@@ -265,7 +274,8 @@ write_default_values(Bus) ->
 %% @private
 %% ---------------------------------------------------------------------------------------
 config(Bus) ->
-    write_reg(Bus, pmsc, #{pmsc_ctrl1 => #{lderune => 2#0}}),
+    write_reg(Bus, ext_sync, #{ec_ctrl => #{pllldt => 2#1}}),
+    %write_reg(Bus, pmsc, #{pmsc_ctrl1 => #{lderune => 2#0}}),
     % Now enable RX and TX leds
     write_reg(Bus, gpio_ctrl, #{gpio_mode => #{msgp2 => 2#01, msgp3 => 2#01}}),
     % Enable RXOK and SFD leds
@@ -284,11 +294,12 @@ config(Bus) ->
 %% It follows the steps described in section 2.5.5.10 of the DW1000 user manual
 %% ---------------------------------------------------------------------------------------
 ldeload(Bus) ->
-    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#1, sysclks => 2#1}}), % Writes 0x0301 in pmsc_ctrl0
-    write_reg(Bus, otp_if, #{otp_ctrl => #{lde_load => 2#1}}), % Writes 0x8000 in OTP_CTRL
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{otp => 2#1, res8 => 2#1}}), % Writes 0x0301 in pmsc_ctrl0
+    write_reg(Bus, otp_if, #{otp_ctrl => #{ldeload => 2#1}}), % Writes 0x8000 in OTP_CTRL
     timer:sleep(150), % User manual requires a wait of 150µs
-    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#0, sysclks => 2#0}}). % Writes 0x0200 in pmsc_ctrl0
-
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#0}}), % Writes 0x0200 in pmsc_ctrl0
+    write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#0}}). 
 
 %% ---------------------------------------------------------------------------------------
 %% @private
@@ -1409,10 +1420,10 @@ reg(decode, dig_diag, Resp) ->
 reg(encode, pmsc_ctrl0, Val) ->
     #{
         softreset := SOFTRESET, pll2_seq_en := PLL2_SEQ_EN, khzclken := KHZCLKEN, gpdrn := GPDRN, gpdce := GPDCE, 
-        gprn := GPRN, gpce := GPCE, amce := AMCE, adcce := ADCCE, res8 := RES8, face := FACE, txclks := TXCLKS, rxclks := RXCLKS, sysclks := SYSCLKS % Here we need res8 for the initial config of the DW1000. We need to write it
+        gprn := GPRN, gpce := GPCE, amce := AMCE, adcce := ADCCE, otp := OTP, res8 := Res8, res7 := Res7, face := FACE, txclks := TXCLKS, rxclks := RXCLKS, sysclks := SYSCLKS % Here we need res8 for the initial config of the DW1000. We need to write it
      } = Val,
     reverse(<<
-        SOFTRESET:4, 2#000:3, PLL2_SEQ_EN:1, KHZCLKEN:1, 2#011:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, 2#0000:4, ADCCE:1, 2#1:1, RES8:1, 2#0:1, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
+        SOFTRESET:4, 2#000:3, PLL2_SEQ_EN:1, KHZCLKEN:1, 2#011:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, 2#0000:4, ADCCE:1, OTP:1, Res8:1, Res7:1, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
     >>);
 reg(encode, pmsc_ctrl1, Val) ->
     #{
@@ -1442,6 +1453,7 @@ reg(encode, pmsc_ledc, Val) ->
     reverse(<<
         RES31:12, BLNKNOW:4, RES15:7, BLNKEN:1, BLINK_TIM:8 % PMSC_LEDC
     >>);
+% mapping pmsc ctrl0 from: https://forum.qorvo.com/t/pmsc-ctrl0-bits8-15/746/3
 reg(decode, pmsc, Resp) ->
     % User manual says: reserved bits should be preserved at their reset value => can hardcode their values ? Safe to do that ?
     <<
@@ -1451,14 +1463,14 @@ reg(decode, pmsc, Resp) ->
         SNOZ_TIM:8, % PMSC_SNOZT
         _:32, % Reserved 1
         KHZCLKDIV:6, _:8, LDERUNE:1, _:1, PLLSYN:1, SNOZR:1, SNOZE:1, ARXSLP:1, ATXSLP:1, PKTSEQ:8, _:1, ARX2INIT:1, _:1, % PMSC_CTRL1
-        SOFTRESET:4, _:3, PLL2_SEQ_EN:1, KHZCLKEN:1, _:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, _:4, ADCCE:1, _:1, RES8:1, _:1, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
+        SOFTRESET:4, _:3, PLL2_SEQ_EN:1, KHZCLKEN:1, _:3, GPDRN:1, GPDCE:1, GPRN:1, GPCE:1, AMCE:1, _:4, ADCCE:1, OTP:1, Res8:1, Res7:1, FACE:1, TXCLKS:2, RXCLKS:2, SYSCLKS:2 % PMSC_CTRL0
     >> = reverse(Resp),
     #{
         pmsc_ledc => #{res31 => Res31, blnknow => BLNKNOW, res15 => Res15, blnken => BLNKEN, blink_tim => BLINK_TIM},
         pmsc_txfseq => #{txfineseq => TXFINESEQ},
         pmsc_snozt => #{snoz_tim => SNOZ_TIM},
         pmsc_ctrl1 => #{khzclkdiv => KHZCLKDIV, lderune => LDERUNE, pllsyn => PLLSYN, snozr => SNOZR, snoze => SNOZE, arxslp => ARXSLP, atxslp => ATXSLP, pktseq => PKTSEQ, arx2init => ARX2INIT},
-        pmsc_ctrl0 => #{softreset => SOFTRESET, pll2_seq_en => PLL2_SEQ_EN, khzclken => KHZCLKEN, gpdrn => GPDRN, gpdce => GPDCE, gprn => GPRN, gpce => GPCE, amce => AMCE, adcce => ADCCE, res8 => RES8, face => FACE, txclks => TXCLKS, rxclks => RXCLKS, sysclks => SYSCLKS}
+        pmsc_ctrl0 => #{softreset => SOFTRESET, pll2_seq_en => PLL2_SEQ_EN, khzclken => KHZCLKEN, gpdrn => GPDRN, gpdce => GPDCE, gprn => GPRN, gpce => GPCE, amce => AMCE, adcce => ADCCE, otp => OTP, res8 => Res8, res7 => Res7, face => FACE, txclks => TXCLKS, rxclks => RXCLKS, sysclks => SYSCLKS}
     };
 reg(decode, RegFile, Resp) -> error({unknown_regfile_to_decode, RegFile, Resp});
 reg(encode, RegFile, Resp) -> error({unknown_regfile_to_encode, RegFile, Resp}).
