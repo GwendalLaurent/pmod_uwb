@@ -53,6 +53,8 @@ test_receiver_ack() ->
 
 test_sender_ack() ->
     #{short_addr := SrcAddr} = pmod_uwb:read(panadr),
+    pmod_uwb:write(sys_cfg, #{ffaa => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
+    pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
     send_data_wait_ack(0, 100, SrcAddr).
 
 %--- Private -------------------------------------------------------------------
