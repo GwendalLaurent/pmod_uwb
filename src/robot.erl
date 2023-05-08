@@ -5,6 +5,7 @@
 
 -include("mac_layer.hrl").
 
+-export([send_mac/1, receive_mac/0]).
 -export([send_and_wait_ack/1, receive_and_ack/0, receive_data/0]).
 -export([test_receiver/0, test_sender/0, test_sender_ack/0, test_receiver_ack/0]).
 
@@ -54,6 +55,15 @@ test_receiver_ack() ->
 test_sender_ack() ->
     #{short_addr := SrcAddr} = pmod_uwb:read(panadr),
     send_data_wait_ack(0, 100, SrcAddr).
+
+send_mac(Data) -> 
+    #{pan_id := SrcPAN, short_addr := SrcAddr} = pmod_uwb:read(panadr),
+    FrameControl = #frame_control{pan_id_compr = ?ENABLED},
+    MacHeader = #mac_header{seqnum = 0, dest_pan = <<SrcPAN:16>>, dest_addr = <<16#FFFF:16>>, src_addr = <<SrcAddr:16>>},
+    mac_layer:mac_send_data(FrameControl, MacHeader, <<Data/bitstring>>).
+
+receive_mac() ->
+    mac_layer:mac_receive().
 
 %--- Private -------------------------------------------------------------------
 receive_data(0) -> ok;

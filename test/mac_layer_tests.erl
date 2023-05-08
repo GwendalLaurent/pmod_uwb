@@ -25,3 +25,10 @@ mac_message_broadcast_test() ->
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_pan = <<16#FFFF:16>>, src_addr = <<16#FFFF:16>>},
     ?assertEqual(<<16#2188:16, 0:8, 16#FFFF:16, 16#FFFF:16, 16#FFFF:16, 16#FFFF:16, "Hello", 0, 0>>, 
                  mac_layer:mac_message(FrameControl, MacHeader, <<"Hello">>)).
+
+decode_mac_message_test() ->
+    Message = <<16#6188:16, 0:8, 16#CADE:16, "XR", "XT", "Hello", 0, 0>>,
+    FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
+    MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
+    ?assertEqual({FrameControl, MacHeader, <<"Hello">>},
+                 mac_layer:mac_decode(Message)).

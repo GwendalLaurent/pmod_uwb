@@ -20,7 +20,7 @@ initiator() ->
     {_Length, Data} = pmod_uwb:reception(),
     #{tx_stamp := PollTXTimestamp} = pmod_uwb:read(tx_time),
     #{rx_stamp := RespRXTimestamp} = pmod_uwb:read(rx_time),
-    {PollRXtimestamp, RespTXTimestamp} = get_resp_ts(Data),
+    %{PollRXtimestamp, RespTXTimestamp} = get_resp_ts(Data),
     ok.
 
 
