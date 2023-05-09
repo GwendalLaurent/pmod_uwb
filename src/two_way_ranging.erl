@@ -21,7 +21,8 @@ initiator() ->
     MacMessage = mac_layer:mac_message(FrameControl, MacHeader, <<"Wave">>),
     pmod_uwb:write_tx_data(MacMessage),
     pmod_uwb:write(sys_ctrl, #{txstrt => 2#1, wait4resp => 2#1}),
-    {_Length, Data} = pmod_uwb:reception(),
+    io:format("Sent init frame~n"),
+    {_, _, Data} = mac_layer:mac_receive(true),
     #{tx_stamp := PollTXTimestamp} = pmod_uwb:read(tx_time),
     #{rx_stamp := RespRXTimestamp} = pmod_uwb:read(rx_time),
     {PollRXTimestamp, RespTXTimestamp} = get_resp_ts(Data),
@@ -31,7 +32,7 @@ initiator() ->
     TimeOfFlight * ?C.
 
 get_resp_ts(Data) ->
-    <<PollRXTimestamp:8, RespTXTimestamp:8>> = Data,
+    <<PollRXTimestamp:40, RespTXTimestamp:40>> = Data,
     {PollRXTimestamp, RespTXTimestamp}.
 
 
@@ -39,8 +40,12 @@ responder() ->
     #{pan_id := PANID, short_addr := Addr} = pmod_uwb:read(panadr),
     {FrameControl, MacHeader, _} = mac_layer:mac_receive(),
     #{rx_stamp := PollRXTimestamp} = pmod_uwb:read(rx_time),
-    RespTXTimestamp = PollRXTimestamp + (300 * ?UUS_TO_DWT_TIME),
+    #{sys_time := SYS_TIME} = pmod_uwb:read(sys_time),
+    RespTXTimestamp = PollRXTimestamp + (50000 * ?UUS_TO_DWT_TIME),
+    io:format("RespTXTS: ~w - PollRXTS: ~w - Sys_time: ~w~n", [RespTXTimestamp, PollRXTimestamp, SYS_TIME]),
     pmod_uwb:write(dx_time, #{dx_time => RespTXTimestamp}),
+    io:format("TX timestamp: ~w~n", [RespTXTimestamp]),
     TXData = <<PollRXTimestamp:40, (RespTXTimestamp bsl 8):32, 0:8>>, % ! Antenna delay not included right now
+    io:format("Data sent: ~w~n", [TXData]),
     TXMacHeader = #mac_header{seqnum = MacHeader#mac_header.seqnum+1, dest_pan = MacHeader#mac_header.src_pan, dest_addr = MacHeader#mac_header.src_addr, src_pan = <<PANID:16>>, src_addr = <<Addr:16>>},
-    mac_layer:mac_send_data(FrameControl, TXMacHeader, TXData).
+    mac_layer:delayed_mac_send_data(FrameControl, TXMacHeader, TXData, RespTXTimestamp).
