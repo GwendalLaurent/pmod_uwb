@@ -3,7 +3,7 @@
 -include("mac_layer.hrl").
 
 -export([delayed_mac_send_data/4]).
--export([mac_send_data/3, mac_receive/0]).
+-export([mac_send_data/3, mac_receive/0, mac_receive/1]).
 -export([mac_decode/1]).
 -export([mac_message/2, mac_message/3]).
 
@@ -56,13 +56,25 @@ delayed_mac_send_data(FrameControl, MacHeader, Payload, Delay) ->
 
 %-------------------------------------------------------------------------------
 % @doc Receive a message using the pmod_uwb and decode the message 
+%
+% @equiv mac_receive(false)
+%
 % @return the received mac message decoded
 %-------------------------------------------------------------------------------
 -spec mac_receive() -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_receive() ->
-    {_Length, Data} = pmod_uwb:reception(),
-    mac_decode(Data).
+    mac_receive(false).
 
+%-------------------------------------------------------------------------------
+% @doc Receive a message using the pmod_uwb and decode the message 
+% @param RXEnab indicates if the reception was already enabled (or is enabled with delay)
+% <b>Warning:</b> if this function is called with RXEnab = true and the reception isn't set, the driver will be stuck in a loop without any timeout
+% @return the received mac message decoded
+%-------------------------------------------------------------------------------
+-spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
+mac_receive(RXEnab) ->
+    {_Length, Data} = pmod_uwb:reception(RXEnab),
+    mac_decode(Data).
 
 %--- Internal ------------------------------------------------------------------
 

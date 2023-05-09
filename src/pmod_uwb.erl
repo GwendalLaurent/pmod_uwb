@@ -5,7 +5,7 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, delayed_transmit/2, transmit_and_wait_for_resp/1, transmit_and_wait_for_resp/2, reception/0]).
+-export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, delayed_transmit/2, transmit_and_wait_for_resp/1, transmit_and_wait_for_resp/2, reception/0, reception/1]).
 -export([softreset/0]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
@@ -163,10 +163,22 @@ transmit_and_wait_for_resp(Data, W4R_TIME) ->
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
+%% @equiv reception(false)
+%%
+%% @end
+%% ---------------------------------------------------------------------------------------
+-spec reception() -> {integer(), bitstring()} | {error, any()}.
+reception() -> 
+    reception(false).
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Receive data using the pmod 
 %%
 %% The function will hang until a frame is received on the board
 %%
 %% The CRC of the received frame <b>isn't</b> included in the returned value
+%%
+%% @param RXEnabled: specifies if the reception is already enabled on the board (or set with delay)
 %%
 %% === Example ===
 %% ```
@@ -176,18 +188,21 @@ transmit_and_wait_for_resp(Data, W4R_TIME) ->
 %% '''
 %% @end
 %% ---------------------------------------------------------------------------------------
-reception() -> 
-    enable_rx(),
+-spec reception(RXEnabled :: boolean()) -> {integer(), bitstring()} | {error, any()}.
+reception(RXEnabled) ->
+    if not RXEnabled -> enable_rx();
+       true -> ok
+    end,
     case wait_for_reception() of
         ok -> get_received_data();
         Err -> error({reception_error, Err})
     end.
 
+
 %% @private
 enable_rx() ->
     call({write, sys_ctrl, #{rxenab => 2#1}}).
 
-%% @private
 wait_for_reception() ->
     case read(sys_status) of 
         #{rxphe := 1} -> rxphe;
