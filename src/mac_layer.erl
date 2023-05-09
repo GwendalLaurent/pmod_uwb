@@ -2,6 +2,7 @@
 
 -include("mac_layer.hrl").
 
+-export([delayed_mac_send_data/4]).
 -export([mac_send_data/3, mac_receive/0]).
 -export([mac_decode/1]).
 -export([mac_message/2, mac_message/3]).
@@ -22,23 +23,36 @@ mac_message(FrameControl, MacHeader) ->
     mac_message(FrameControl, MacHeader, <<>>).
 %-------------------------------------------------------------------------------
 % @doc builds a mac message
-% @returns a MAC message ready to send in a bitstring
+% @returns a MAC message ready to be transmitted in a bitstring (not including the CRC automatically added by the DW1000)
 % @end
 %-------------------------------------------------------------------------------
 -spec mac_message(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> bitstring().
 mac_message(FrameControl, MacHeader, Payload) ->
     Header = build_mac_header(FrameControl, MacHeader),
-    <<Header/bitstring, Payload/bitstring, 2#0:16>>.
+    <<Header/bitstring, Payload/bitstring>>.
 
 
 %-------------------------------------------------------------------------------
 % @doc Sends a MAC message using the pmod_uwb
+% The 2 bytes CRC are automatically added at the end of the payload and
+% must not be included in the Payload given in the arguments
 %-------------------------------------------------------------------------------
 -spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
 mac_send_data(FrameControl, MacHeader, Payload) ->
     Message = mac_message(FrameControl, MacHeader, Payload),
     pmod_uwb:transmit(Message).
 
+%-------------------------------------------------------------------------------
+% @doc sends a MAC message using the pmod_uwb with some delay
+% The 2 bytes CRC are automatically added at the end of the payload and
+% must not be included in the Payload given in the arguments
+%
+% The delay must be exprimed in system time unit. NB: the lower 9 bits are ignored to compute the delay
+%-------------------------------------------------------------------------------
+-spec delayed_mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Delay :: integer()) -> ok.
+delayed_mac_send_data(FrameControl, MacHeader, Payload, Delay) ->
+    Message = mac_message(FrameControl, MacHeader, Payload),
+    pmod_uwb:delayed_transmit(Message, Delay).
 
 %-------------------------------------------------------------------------------
 % @doc Receive a message using the pmod_uwb and decode the message 
@@ -90,7 +104,7 @@ mac_decode(Data) ->
     FrameControl = decode_frame_control(FC),
     % TODO: Decode the pan/addrs + the payload 
     % MacHeader = #mac_header{seqnum = Seqnum},
-    [DestPan, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl, bit_size(Rest))),
+    [DestPan, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl)),
     SrcPan = case {FrameControl#frame_control.pan_id_compr, SrcPan_} of
                  {?ENABLED, <<>>} -> DestPan;
                  _ -> SrcPan_
@@ -98,34 +112,33 @@ mac_decode(Data) ->
     MacHeader = #mac_header{seqnum = Seqnum, dest_pan = DestPan, dest_addr = DestAddr, src_pan = SrcPan, src_addr = SrcAddr},
     {FrameControl, MacHeader, Payload}.
 
-decode_addrs(dest_pan_id, Rest, FrameControl, SizeLeft) ->
+decode_addrs(dest_pan_id, Rest, FrameControl) ->
     case FrameControl#frame_control.dest_addr_mode of
-        ?NONE -> [<<>>, <<>>, decode_addrs(src_pan_id, Rest, FrameControl, SizeLeft)];
+        ?NONE -> [<<>>, <<>>, decode_addrs(src_pan_id, Rest, FrameControl)];
         _ -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, 
-             [reverse_byte_order(PanID), decode_addrs(dest_addr, Tail, FrameControl, SizeLeft-16)]
+             [reverse_byte_order(PanID), decode_addrs(dest_addr, Tail, FrameControl)]
     end;
-decode_addrs(dest_addr, Rest, FrameControl, SizeLeft) ->
+decode_addrs(dest_addr, Rest, FrameControl) ->
     case FrameControl#frame_control.dest_addr_mode of
         ?SHORT_ADDR -> <<Addr:16/bitstring, Tail/bitstring>> = Rest, 
-                       [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl, SizeLeft-16)];
+                       [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)];
         ?EXTENDED -> <<Addr:64/bitstring, Tail/bitstring>> = Rest, 
-                     [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl, SizeLeft-64)]
+                     [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)]
     end;
-decode_addrs(src_pan_id, Rest, FrameControl, SizeLeft) ->
+decode_addrs(src_pan_id, Rest, FrameControl) ->
     case {FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.dest_addr_mode} of
         {?DISABLED, _} -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, 
-                          [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl, SizeLeft-16)];
+                          [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl)];
         {?ENABLED, ?NONE} -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, 
-                             [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl, SizeLeft-16)];
-        {?ENABLED, _} -> [<<>>, decode_addrs(src_addr, Rest, FrameControl, SizeLeft)]
+                             [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl)];
+        {?ENABLED, _} -> [<<>>, decode_addrs(src_addr, Rest, FrameControl)]
     end;
-decode_addrs(src_addr, Rest, FrameControl, SizeLeft) ->
+decode_addrs(src_addr, Rest, FrameControl) ->
     case FrameControl#frame_control.src_addr_mode of
-        ?NONE -> <<Payload:(SizeLeft-16)/bitstring, _:16>> = Rest, 
-                 Payload;
-        ?SHORT_ADDR -> <<Addr:16/bitstring, Payload:(SizeLeft-32)/bitstring, _:16/bitstring>> = Rest, 
+        ?NONE -> Rest; 
+        ?SHORT_ADDR -> <<Addr:16/bitstring, Payload/bitstring>> = Rest, 
                        [reverse_byte_order(Addr), Payload];
-        ?EXTENDED -> <<Addr:64/bitstring, Payload:(SizeLeft-80)/bitstring, _:16/bitstring>> = Rest, 
+        ?EXTENDED -> <<Addr:64/bitstring, Payload/bitstring>> = Rest, 
                      [reverse_byte_order(Addr), Payload]
     end.
 

@@ -5,7 +5,7 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit_and_wait_for_resp/1, transmit_and_wait_for_resp/2, reception/0]).
+-export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, delayed_transmit/2, transmit_and_wait_for_resp/1, transmit_and_wait_for_resp/2, reception/0]).
 -export([softreset/0]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
@@ -103,29 +103,42 @@ get_received_data() -> call({get_rx_data}).
 %% ---------------------------------------------------------------------------------------
 %% @doc Transmit data
 %%
-%% Data can be either a String (e.g. "Hello world") or a bitstring
-%% This is to support frame transmission for later
-%% 
 %% === Examples ===
-%% To transmit a simple litteral string:
-%% ```
-%% 1> pmod_uwb:transmit("Hello world").
-%% ok.
-%% ''''
-%% 
 %% To transmit a frame:
 %% ```
-%% 2> pmod_uwb:transmit(<Version:4, NextHop:8>>).
+%% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>).
 %% ok.
 %% '''
 %% @end
 %% ---------------------------------------------------------------------------------------
--spec transmit(Data :: list() | bitstring()) -> ok | {error, any()}.
-transmit(Data) when is_list(Data) ->
-    transmit(<<16#5C, 0, (list_to_binary(Data))/bitstring>>);
+-spec transmit(Data :: bitstring()) -> ok | {error, any()}.
 transmit(Data) when is_bitstring(Data) ->
     call({transmit, Data}).
 
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Transmit data with a specified delay
+%% 
+%% @param Delay: the timestamp at which the frame should be transmitted (exprimed in system time unit)
+%%
+%% N.B. The 9 lower bits of the delay are ignored by the DW1000
+%% 
+%% === Examples ===
+%% To transmit a frame:
+%% ```
+%% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>, 999999999).
+%% ok.
+%% '''
+%% @end
+%% ---------------------------------------------------------------------------------------
+-spec delayed_transmit(Data :: bitstring(), Delay :: integer()) -> ok | {error, any()}.
+delayed_transmit(Data, Delay) when is_bitstring(Data) ->
+    call({delayed_transmit, Data, Delay}),
+    case read(sys_status) of
+        #{hdpwarn := 2#1} -> error({hdpwarn});
+        #{txdlys := 2#1} -> error({txdlys});
+        _ -> ok
+    end.
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Transmit the data and automatically wait for a response
@@ -152,6 +165,8 @@ transmit_and_wait_for_resp(Data, W4R_TIME) ->
 %% @doc Receive data using the pmod 
 %%
 %% The function will hang until a frame is received on the board
+%%
+%% The CRC of the received frame <b>isn't</b> included in the returned value
 %%
 %% === Example ===
 %% ```
@@ -224,6 +239,7 @@ handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg
 handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
 handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
 handle_call({transmit, Data}, _From, #{bus := Bus} = State) -> {reply, tx(Bus, Data), State};
+handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) -> {reply, delayed_tx(Bus, Data, Delay), State};
 handle_call({get_rx_data}, _From, #{bus := Bus} = State) -> {reply, get_rx_data(Bus), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
 
@@ -242,10 +258,10 @@ call(Call) ->
 %% @returns ok if the value is correct, otherwise the value read
 %% ---------------------------------------------------------------------------------------
 verify_id(Bus) ->
-    #{ridtag := Val} = read_reg(Bus, dev_id),
-    case Val of
-        "DECA" -> ok;
-        _ -> Val
+    #{ridtag := RIDTAG, model := MODEL} = read_reg(Bus, dev_id),
+    case {RIDTAG, MODEL} of
+        {"DECA", 1} -> ok;
+        _ -> {RIDTAG, MODEL}
     end.
 
 %% ---------------------------------------------------------------------------------------
@@ -319,14 +335,24 @@ tx(Bus, Data) ->
     write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1}). % start transmission
 
+%% ---------------------------------------------------------------------------------------
+%% @private
+%% Transmit the data with a specified delay using UWB
+%% ---------------------------------------------------------------------------------------
+delayed_tx(Bus, Data, Delay) ->
+    write_reg(Bus, dx_time, #{dx_time => Delay}),
+    DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
+    write_tx_data(Bus, Data),
+    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
+    write_reg(Bus, sys_ctrl, #{txstrt => 2#1, txdlys => 2#1}). % start transmission
 
 %% ---------------------------------------------------------------------------------------
 %% @private
-%% Get the received data stored in the rx_buffer
+%% Get the received data (without the CRC bytes) stored in the rx_buffer
 %% ---------------------------------------------------------------------------------------
 get_rx_data(Bus) ->
     #{rxflen := FrameLength} = read_reg(Bus, rx_finfo),
-    Frame = read_rx_data(Bus, FrameLength),
+    Frame = read_rx_data(Bus, FrameLength-2), % Remove the CRC bytes
     {FrameLength, Frame}.
 
 %% ---------------------------------------------------------------------------------------
@@ -409,9 +435,14 @@ read_sub_reg(Bus, RegFileID, SubRegister) ->
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, HeaderSize, subRegSize(SubRegister)}]),
     reg(decode, SubRegister, Resp).
 
+
+%% ---------------------------------------------------------------------------------------
+%% @doc get the received data 
+%% @param Length is the total length of the data we are trying to read
+%% ---------------------------------------------------------------------------------------
 read_rx_data(Bus, Length) ->
     Header = header(read, rx_buffer),
-    [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length-2}]), % Remove the CRC bytes from the read
+    [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length}]),
     Resp.
 
 % TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
