@@ -5,6 +5,7 @@
 
 -include("mac_layer.hrl").
 
+-export([test_sys_clock/1]).
 -export([send_mac/1, receive_mac/0]).
 -export([send_and_wait_ack/1, receive_and_ack/0, receive_data/0]).
 -export([test_receiver/0, test_sender/0, test_sender_ack/0, test_receiver_ack/0]).
@@ -66,6 +67,12 @@ send_mac(Data) ->
 
 receive_mac() ->
     mac_layer:mac_receive().
+
+test_sys_clock(0) -> ok;
+test_sys_clock(N) ->
+    #{sys_time := SYS_CLOCK} = pmod_uwb:read(sys_time),
+    io:format("~w~n", [SYS_CLOCK]),
+    test_sys_clock(N-1).
 
 %--- Private -------------------------------------------------------------------
 receive_data(0) -> ok;
