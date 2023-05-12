@@ -1,28 +1,41 @@
 -module(pmod_uwb).
 -behaviour(gen_server).
 
-
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, delayed_transmit/2, transmit_and_wait_for_resp/1, transmit_and_wait_for_resp/2, reception/0, reception/1]).
+-export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, reception/0, reception/1]).
 -export([softreset/0]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
-
-% Define the polarity and the phase of the clock
--define(SPI_MODE, #{clock => {low, leading}}).
 
 % Include for the record "device"
 -include("grisp.hrl").
 
 -include("pmod_uwb.hrl").
 
+% Define the polarity and the phase of the clock
+-define(SPI_MODE, #{clock => {low, leading}}).
+
+-define(WRITE_ONLY_REG_FILE(RegFileID), RegFileID == tx_buffer).
+-define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
+                                       RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
+
+% The congifurations of the subregisters of these register files are different (some sub-registers are RO, some are RW and some have reserved bytes that can't be written)
+% Thus, some registers files require to write their sub-register independently => Write the sub-registers one by one instead of writting the whole register file directly
+-define(IS_SRW(RegFileID), RegFileID==agc_ctrl; RegFileID==ext_sync; RegFileID==ec_ctrl; RegFileID==gpio_ctrl; RegFileID==drx_conf; RegFileID==rf_conf; RegFileID==tx_cal; 
+                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==lde_if; RegFileID==dig_diag; RegFileID==pmsc).
+
+-define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs; SubRegister==agc_stat1; SubRegister==ec_rxtc; SubRegister==ec_glop; SubRegister==drx_car_int; 
+                                         SubRegister==rf_status; SubRegister==tc_sarl; SubRegister==sarw; SubRegister==tc_pg_status; SubRegister==lde_thresh;
+                                         SubRegister==lde_ppindx; SubRegister==lde_ppampl; SubRegister==evc_phe; SubRegister==evc_rse; SubRegister==evc_fcg; 
+                                         SubRegister==evc_fce; SubRegister==evc_ffr; SubRegister==evc_ovr; SubRegister==evc_sto; SubRegister==evc_pto; 
+                                         SubRegister==evc_fwto; SubRegister==evc_txfs; SubRegister==evc_hpw; SubRegister==evc_tpw).
 
 -type regFileID() :: atom().
 
+
 %--- API -----------------------------------------------------------------------
-% TODO: Document the public API of the pmod
 
 %% @private
 start_link(Connector, _Opts) ->
@@ -41,6 +54,8 @@ start_link(Connector, _Opts) ->
 %% @end
 %% ---------------------------------------------------------------------------------------
 -spec read(RegFileID :: regFileID()) -> map() | {error, any()}.
+read(RegFileID) when ?WRITE_ONLY_REG_FILE(RegFileID) ->
+    error({read_on_write_only_register, RegFileID});
 read(RegFileID) -> call({read, RegFileID}).
 
 %% ---------------------------------------------------------------------------------------
@@ -101,7 +116,7 @@ write_tx_data(Value) -> call({write_tx, Value}).
 get_received_data() -> call({get_rx_data}).
 
 %% ---------------------------------------------------------------------------------------
-%% @doc Transmit data
+%% @doc Transmit data with the default options (i.e. don't wait for resp, no delayn ...)
 %%
 %% === Examples ===
 %% To transmit a frame:
@@ -113,53 +128,53 @@ get_received_data() -> call({get_rx_data}).
 %% ---------------------------------------------------------------------------------------
 -spec transmit(Data :: bitstring()) -> ok | {error, any()}.
 transmit(Data) when is_bitstring(Data) ->
-    call({transmit, Data}).
-
+    call({transmit, Data, #tx_opts{}}),
+    wait_for_transmission().
 
 %% ---------------------------------------------------------------------------------------
-%% @doc Transmit data with a specified delay
-%% 
-%% @param Delay: the timestamp at which the frame should be transmitted (exprimed in system time unit)
+%% @doc Performs a transmission with the specified options
 %%
-%% N.B. The 9 lower bits of the delay are ignored by the DW1000
-%% 
+%% If wait4resp is set to ENABLED, the function will wait until a reception or an error and will return the data received as well as its length
+%%
+%% === Options ===
+%% * wait4resp: It specifies that the reception must be enabled after the transmission in the expectation of a response
+%% * w4r-tim: Specifies the turn around time in microseconds. That is the time the pmod will wait before enabling rx after a tx. Note that it won't be set if wit4resp is disabled
+%% * txdlys: Specifies if the transmitter delayed sending should be set 
+%% * tx_delay: Specifies the delay of the transmission (see register DX_TIME)
+%%
 %% === Examples ===
 %% To transmit a frame:
 %% ```
-%% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>, 999999999).
+%% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>, #tx_opts{}).
 %% ok.
+%% '''
+%% To transmit a frame with wait4resp set:
+%% ```
+%% 2> pmod_uwb:transmit(<<Version:4, NextHop:8>>, #tx_opts{wait4resp = ?ENABLED}).
+%% {RXLength, RXData}.
 %% '''
 %% @end
 %% ---------------------------------------------------------------------------------------
--spec delayed_transmit(Data :: bitstring(), Delay :: integer()) -> ok | {error, any()}.
-delayed_transmit(Data, Delay) when is_bitstring(Data) ->
-    call({delayed_transmit, Data, Delay}),
+transmit(Data, Options) ->
+    call({transmit, Data, Options}),
     case read(sys_status) of
         #{hdpwarn := 2#1} -> error({hdpwarn});
-        #{txdlys := 2#1} -> error({txdlys});
+        _ -> ok
+    end,
+    wait_for_transmission(),
+    case Options#tx_opts.wait4resp of
+        ?ENABLED -> reception(true);
         _ -> ok
     end.
 
-%% ---------------------------------------------------------------------------------------
-%% @doc Transmit the data and automatically wait for a response
-%% @equiv transmit_and_wait_for_resp(Data, 0)
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec transmit_and_wait_for_resp(Data :: list() | bitstring()) -> ok | {error, any()}.
-transmit_and_wait_for_resp(Data) ->
-    transmit_and_wait_for_resp(Data, 0).
-
-%% ---------------------------------------------------------------------------------------
-%% @doc Transmit the data and automatically wait for a response
-%% @param W4R_TIME: specifies the amount of µs before RX is turned on after the transmission
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec transmit_and_wait_for_resp(Data :: list() | bitstring(), integer()) -> ok | {error, any()}.
-transmit_and_wait_for_resp(Data, W4R_TIME) -> 
-    write(sys_ctrl, #{wait4resp => 2#1}),
-    write(ack_resp_t, #{w4r_tim => W4R_TIME}), % W4R_TIME ms before the RX to be enabled after TX
-    transmit(Data),
-    reception().
+%% @private
+%% Wait for the transmission to be performed
+%% usefull in the case of a delayed transmission
+wait_for_transmission() ->
+    case read(sys_status) of
+        #{txfrs := 1} -> ok;
+        _ -> wait_for_transmission()
+    end.
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
@@ -194,13 +209,15 @@ reception(RXEnabled) ->
        true -> ok
     end,
     case wait_for_reception() of
-        ok -> get_received_data();
+        ok -> write(sys_status, #{rxfcg => 1}), % Clearing good CRC indicating good RX
+              get_received_data();
         Err -> error({reception_error, Err})
     end.
 
 
 %% @private
 enable_rx() ->
+    io:format("Enabling reception~n"),
     call({write, sys_ctrl, #{rxenab => 2#1}}).
 
 wait_for_reception() ->
@@ -213,9 +230,12 @@ wait_for_reception() ->
         #{ldeerr := 1} -> ldeerr;
         #{affrej := 1} -> affrej;
         #{rxdfr := 0} -> wait_for_reception();
-        #{rxdfr := 1} -> ok;
+        #{rxfce := 1} -> rxfce;
+        #{rxfcg := 1} -> ok;
         _ -> error({error_wait_for_reception})
     end.
+
+
 
 
 %% ---------------------------------------------------------------------------------------
@@ -253,7 +273,7 @@ init(Slot) ->
 handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg(Bus, RegFileID), State};
 handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
 handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
-handle_call({transmit, Data}, _From, #{bus := Bus} = State) -> {reply, tx(Bus, Data), State};
+handle_call({transmit, Data, Options}, _From, #{bus := Bus} = State) -> {reply, tx(Bus, Data, Options), State};
 handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) -> {reply, delayed_tx(Bus, Data, Delay), State};
 handle_call({get_rx_data}, _From, #{bus := Bus} = State) -> {reply, get_rx_data(Bus), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
@@ -343,12 +363,24 @@ setup_sfd(Bus) ->
 %% ---------------------------------------------------------------------------------------
 %% @private
 %% Transmit the data using UWB
+%% @param Options is used to set options about the transmission like a transmission delay, etc.
 %% ---------------------------------------------------------------------------------------
-tx(Bus, Data) -> 
+-spec tx(_, Data :: bitstring(), Options :: #tx_opts{}) -> ok.
+tx(Bus, Data, #tx_opts{wait4resp = Wait4resp, w4r_tim = W4rTim, txdlys = TxDlys, tx_delay = TxDelay}) -> 
+    % Writing the data that will be sent (w/o CRC)
     DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
     write_tx_data(Bus, Data),
+    % Setting the options of the transmission
+    case Wait4resp of
+        ?ENABLED -> write_reg(Bus, ack_resp_t, #{w4r_tim => W4rTim});
+        _ -> ok
+    end,
+    case TxDlys of
+        ?ENABLED -> write_reg(Bus, dx_time, #{dx_time => TxDelay});
+        _ -> ok
+    end,
     write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
-    write_reg(Bus, sys_ctrl, #{txstrt => 2#1}). % start transmission
+    write_reg(Bus, sys_ctrl, #{txstrt => 2#1, wait4resp => Wait4resp, txdlys => TxDlys}). % start transmission and some options
 
 %% ---------------------------------------------------------------------------------------
 %% @private
@@ -427,7 +459,6 @@ header(Op, RegFileID, SubRegister, 3) ->
 %% @private
 %% @doc Read the values stored in a register file
 %% ---------------------------------------------------------------------------------------
-read_reg(Bus, tx_buffer) -> error({read_write_only, Bus, tx_buffer});
 read_reg(Bus, lde_ctrl) -> read_reg(Bus, lde_if);
 read_reg(Bus, lde_if) ->
     lists:foldl(fun(Elem, Acc) ->
@@ -466,16 +497,17 @@ read_rx_data(Bus, Length) ->
 %% @doc used to write the values in the map given in the Value argument
 %% ---------------------------------------------------------------------------------------
 -spec write_reg(Bus::map(), RegFileID::regFileID(), Value::map()) -> ok | {error, any()}.
+% Write each sub-register one by one.
+% If the user tries to write in a read-only sub-register, an error is thrown 
 write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
     maps:map(
         fun(SubRegister, Val) ->
-            Header = header(write, RegFileID, SubRegister),
-            % io:format("Header: [~s]", [debug_bitstring(Header)]),
             CurrVal = maps:get(SubRegister, read_reg(Bus, RegFileID)), % ? can the read be done before ? Maybe but not assured that no values changes after a write in the register
             Body = case CurrVal of
                         V when is_map(V) -> reg(encode, SubRegister, maps:merge_with(fun(_Key, _Old, New) -> New end, CurrVal, Val));
                         _ -> reg(encode, SubRegister, #{SubRegister => Val})
                    end,
+            Header = header(write, RegFileID, SubRegister),
             % debug_write(RegFileID, SubRegister, Body),
             _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 2+subRegSize(SubRegister), 0}])
         end,
@@ -1520,6 +1552,235 @@ reg(decode, pmsc, Resp) ->
     };
 reg(decode, RegFile, Resp) -> error({unknown_regfile_to_decode, RegFile, Resp});
 reg(encode, RegFile, Resp) -> error({unknown_regfile_to_encode, RegFile, Resp}).
+
+rw(read) -> 0;
+rw(write) -> 1.
+
+% Mapping of the different register IDs to their hexadecimal value
+regFile(dev_id) -> 16#00;
+regFile(eui) -> 16#01;
+% 0x02 is reserved
+regFile(panadr) -> 16#03;
+regFile(sys_cfg) -> 16#04;
+% 0x05 is reserved
+regFile(sys_time) -> 16#06;
+% 0x07 is reserved
+regFile(tx_fctrl) -> 16#08;
+regFile(tx_buffer) -> 16#09;
+regFile(dx_time) -> 16#0A;
+% 0x0B is reserved
+regFile(rx_fwto) -> 16#0C;
+regFile(sys_ctrl) -> 16#0D;
+regFile(sys_mask) -> 16#0E;
+regFile(sys_status) -> 16#0F;
+regFile(rx_finfo) -> 16#10;
+regFile(rx_buffer) -> 16#11;
+regFile(rx_fqual) -> 16#12;
+regFile(rx_ttcki) -> 16#13;
+regFile(rx_ttcko) -> 16#14;
+regFile(rx_time) -> 16#15;
+% 0x16 is reserved
+regFile(tx_time) -> 16#17;
+regFile(tx_antd) -> 16#18;
+regFile(sys_state) -> 16#19;
+regFile(ack_resp_t) -> 16#1A;
+% 0x1B is reserved
+% 0x1C is reserved
+regFile(rx_sniff) -> 16#1D;
+regFile(tx_power) -> 16#1E;
+regFile(chan_ctrl) -> 16#1F;
+% 0x20 is reserved
+regFile(usr_sfd) -> 16#21;
+% 0x22 is reserved
+regFile(agc_ctrl) -> 16#23;
+regFile(ext_sync) -> 16#24;
+regFile(acc_mem) -> 16#25;
+regFile(gpio_ctrl) -> 16#26;
+regFile(drx_conf) -> 16#27;
+regFile(rf_conf) -> 16#28;
+% 0x29 is reserved
+regFile(tx_cal) -> 16#2A;
+regFile(fs_ctrl) -> 16#2B;
+regFile(aon) -> 16#2C;
+regFile(otp_if) -> 16#2D;
+regFile(lde_ctrl) -> regFile(lde_if); % No size ?
+regFile(lde_if) -> 16#2E;
+regFile(dig_diag) -> 16#2F;
+% 0x30 - 0x35 are reserved
+regFile(pmsc) -> 16#36;
+% 0x37 - 0x3F are reserved
+regFile(RegId) -> error({wrong_register_ID, RegId}).
+
+% Only the writtable subregisters in SRW register files are present here
+% AGC_CTRL
+subReg(agc_ctrl1) -> 16#02;
+subReg(agc_tune1) -> 16#04;
+subReg(agc_tune2) -> 16#0C;
+subReg(agc_tune3) -> 16#12;
+subReg(agc_stat1) -> 16#1E;
+subReg(ec_ctrl) -> 16#00;
+subReg(gpio_mode) -> 16#00;
+subReg(gpio_dir) -> 16#08;
+subReg(gpio_dout) -> 16#0C;
+subReg(gpio_irqe) -> 16#10;
+subReg(gpio_isen) -> 16#14;
+subReg(gpio_imode) -> 16#18;
+subReg(gpio_ibes) -> 16#1C;
+subReg(gpio_iclr) -> 16#20;
+subReg(gpio_idbe) -> 16#24;
+subReg(gpio_raw) -> 16#28;
+subReg(drx_tune0b) -> 16#02;
+subReg(drx_tune1a) -> 16#04;
+subReg(drx_tune1b) -> 16#06;
+subReg(drx_tune2) -> 16#08;
+subReg(drx_sfdtoc) -> 16#20;
+subReg(drx_pretoc) -> 16#24;
+subReg(drx_tune4h) -> 16#26;
+subReg(rf_conf) -> 16#00;
+subReg(rf_rxctrlh) -> 16#0B;
+subReg(rf_txctrl) -> 16#0C;
+subReg(ldotune) -> 16#30;
+subReg(tc_sarc) -> 16#00;
+subReg(tc_pg_ctrl) -> 16#08;
+subReg(tc_pgdelay) -> 16#0B;
+subReg(tc_pgtest) -> 16#0C;
+subReg(fs_pllcfg) -> 16#07;
+subReg(fs_plltune) -> 16#0B;
+subReg(fs_xtalt) -> 16#0E;
+subReg(aon_wcfg) -> 16#00;
+subReg(aon_ctrl) -> 16#02;
+subReg(aon_rdat) -> 16#03;
+subReg(aon_addr) -> 16#04;
+subReg(aon_cfg0) -> 16#06;
+subReg(aon_cfg1) -> 16#0A;
+subReg(otp_wdat) -> 16#00;
+subReg(otp_addr) -> 16#04;
+subReg(otp_ctrl) -> 16#06;
+subReg(otp_stat) -> 16#08;
+subReg(otp_rdat) -> 16#0A;
+subReg(otp_srdat) -> 16#0E;
+subReg(otp_sf) -> 16#12;
+subReg(lde_thresh) -> 16#00;
+subReg(lde_cfg1) -> 16#806;
+subReg(lde_ppindx) -> 16#1000;
+subReg(lde_ppampl) -> 16#1002;
+subReg(lde_rxantd) -> 16#1804;
+subReg(lde_cfg2) -> 16#1806;
+subReg(lde_repc) -> 16#2804;
+subReg(evc_ctrl) -> 16#00;
+subReg(diag_tmc) -> 16#24;
+subReg(pmsc_ctrl0) -> 16#00;
+subReg(pmsc_ctrl1) -> 16#04;
+subReg(pmsc_snozt) -> 16#0C;
+subReg(pmsc_txfseq) -> 16#26;
+subReg(pmsc_ledc) -> 16#28.
+
+
+% Mapping of the size in bytes of the different register IDs
+regSize(dev_id) -> 4;
+regSize(eui) -> 8;
+regSize(panadr) -> 4;
+regSize(sys_cfg) -> 4;
+regSize(sys_time) -> 5;
+regSize(tx_fctrl) -> 5;
+regSize(tx_buffer) -> 1024;
+regSize(dx_time) -> 5;
+regSize(rx_fwto) -> 2; % user manual gives 2 bytes and bits 16-31 are reserved
+regSize(sys_ctrl) -> 4;
+regSize(sys_mask) -> 4;
+regSize(sys_status) -> 5;
+regSize(rx_finfo) -> 4;
+regSize(rx_buffer) -> 1024;
+regSize(rx_fqual) -> 8;
+regSize(rx_ttcki) -> 4;
+regSize(rx_ttcko) -> 5;
+regSize(rx_time) -> 14;
+regSize(tx_time) -> 10;
+regSize(tx_antd) -> 2;
+regSize(sys_state) -> 4;
+regSize(ack_resp_t) -> 4;
+regSize(rx_sniff) -> 4;
+regSize(tx_power) -> 4;
+regSize(chan_ctrl) -> 4;
+regSize(usr_sfd) -> 41;
+regSize(agc_ctrl) -> 33;
+regSize(ext_sync) -> 12;
+regSize(acc_mem) -> 4064;
+regSize(gpio_ctrl) -> 44;
+regSize(drx_conf) -> 44; % user manual gives 44 bytes but sum of register length gives 45 bytes
+regSize(rf_conf) -> 58; % user manual gives 58 but sum of all its register gives 53 => Placeholder for the remaining 8 bytes
+regSize(tx_cal) -> 13; % user manual gives 52 bytes but sum of all sub regs gives 13 bytes
+regSize(fs_ctrl) -> 21;
+regSize(aon) -> 12;
+regSize(otp_if) -> 19; % user manual gives 18 bytes in regs table but sum of all sub regs is 19 bytes
+regSize(lde_ctrl) -> undefined; % No size ?
+regSize(lde_if) -> undefined; % No size ?
+regSize(dig_diag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
+regSize(pmsc) -> 41. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
+
+%% Gives the size in bytes
+subRegSize(agc_ctrl1) -> 2;
+subRegSize(agc_tune1) -> 2;
+subRegSize(agc_tune2) -> 4;
+subRegSize(agc_tune3) -> 2;
+subRegSize(agc_stat1) -> 3;
+subRegSize(ec_ctrl) -> 4;
+subRegSize(gpio_mode) -> 4;
+subRegSize(gpio_dir) -> 4;
+subRegSize(gpio_dout) -> 4;
+subRegSize(gpio_irqe) -> 4;
+subRegSize(gpio_isen) -> 4;
+subRegSize(gpio_imode) -> 4;
+subRegSize(gpio_ibes) -> 4;
+subRegSize(gpio_iclr) -> 4;
+subRegSize(gpio_idbe) -> 4;
+subRegSize(gpio_raw) -> 4;
+subRegSize(drx_tune0b) -> 2;
+subRegSize(drx_tune1a) -> 2;
+subRegSize(drx_tune1b) -> 2;
+subRegSize(drx_tune2) -> 4;
+subRegSize(drx_sfdtoc) -> 2;
+subRegSize(drx_pretoc) -> 2;
+subRegSize(drx_tune4h) -> 2;
+subRegSize(rf_conf) -> 4;
+subRegSize(rf_rxctrlh) -> 1;
+subRegSize(rf_txctrl) -> 4; % ! table in user manual gives 3 but details gives 4
+subRegSize(ldotune) -> 5;
+subRegSize(tc_sarc) -> 2;
+subRegSize(tc_pg_ctrl) -> 1;
+subRegSize(tc_pgdelay) -> 1;
+subRegSize(tc_pgtest) -> 1;
+subRegSize(fs_pllcfg) -> 4;
+subRegSize(fs_plltune) -> 1;
+subRegSize(fs_xtalt) -> 1;
+subRegSize(aon_wcfg) -> 2;
+subRegSize(aon_ctrl) -> 1;
+subRegSize(aon_rdat) -> 1;
+subRegSize(aon_addr) -> 1;
+subRegSize(aon_cfg0) -> 4;
+subRegSize(aon_cfg1) -> 2;
+subRegSize(otp_wdat) -> 4;
+subRegSize(otp_addr) -> 2;
+subRegSize(otp_ctrl) -> 2;
+subRegSize(otp_stat) -> 2;
+subRegSize(otp_rdat) -> 4;
+subRegSize(otp_srdat) -> 4;
+subRegSize(otp_sf) -> 1;
+subRegSize(lde_thresh) -> 2;
+subRegSize(lde_cfg1) -> 1;
+subRegSize(lde_ppindx) -> 2;
+subRegSize(lde_ppampl) -> 2;
+subRegSize(lde_rxantd) -> 2;
+subRegSize(lde_cfg2) -> 2;
+subRegSize(lde_repc) -> 2;
+subRegSize(evc_ctrl) -> 4;
+subRegSize(diag_tmc) -> 2;
+subRegSize(pmsc_ctrl0) -> 4;
+subRegSize(pmsc_ctrl1) -> 4;
+subRegSize(pmsc_snozt) -> 1;
+subRegSize(pmsc_txfseq) -> 2;
+subRegSize(pmsc_ledc) -> 4;
+subRegSize(_) -> error({error}). % TODO: remove or make a better error
 
 %--- Debug ---------------------------------------------------------------------
 

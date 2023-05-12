@@ -3,7 +3,7 @@
 -include("mac_layer.hrl").
 
 -export([delayed_mac_send_data/4]).
--export([mac_send_data/3, mac_receive/0, mac_receive/1]).
+-export([mac_send_data/3, mac_send_data/4, mac_receive/0, mac_receive/1]).
 -export([mac_decode/1]).
 -export([mac_message/2, mac_message/3]).
 
@@ -33,14 +33,28 @@ mac_message(FrameControl, MacHeader, Payload) ->
 
 
 %-------------------------------------------------------------------------------
-% @doc Sends a MAC message using the pmod_uwb
+% @doc Sends a MAC message using the pmod_uwb without any options
 % The 2 bytes CRC are automatically added at the end of the payload and
 % must not be included in the Payload given in the arguments
 %-------------------------------------------------------------------------------
 -spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
 mac_send_data(FrameControl, MacHeader, Payload) ->
+    mac_send_data(FrameControl, MacHeader, Payload, #tx_opts{}).
+
+%-------------------------------------------------------------------------------
+% @doc Sends a MAC message using the pmod_uwb using the specified options 
+% The 2 bytes CRC are automatically added at the end of the payload and
+% must not be included in the Payload given in the arguments
+%
+% If the option wait4resp is enabled, the function will wait for the reception and return the decoded frame
+%-------------------------------------------------------------------------------
+-spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
+mac_send_data(FrameControl, MacHeader, Payload, Options) ->
     Message = mac_message(FrameControl, MacHeader, Payload),
-    pmod_uwb:transmit(Message).
+    case pmod_uwb:transmit(Message, Options) of 
+        {_DataLength, Data} -> mac_decode(Data);
+        _ -> ok
+    end.
 
 %-------------------------------------------------------------------------------
 % @doc sends a MAC message using the pmod_uwb with some delay
@@ -52,7 +66,8 @@ mac_send_data(FrameControl, MacHeader, Payload) ->
 -spec delayed_mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Delay :: integer()) -> ok.
 delayed_mac_send_data(FrameControl, MacHeader, Payload, Delay) ->
     Message = mac_message(FrameControl, MacHeader, Payload),
-    pmod_uwb:delayed_transmit(Message, Delay).
+    Options = #tx_opts{txdlys = ?ENABLED, tx_delay = Delay}, 
+    pmod_uwb:transmit(Message, Options).
 
 %-------------------------------------------------------------------------------
 % @doc Receive a message using the pmod_uwb and decode the message 

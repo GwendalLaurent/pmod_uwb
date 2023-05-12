@@ -1,10 +1,9 @@
+-include("pmod_uwb.hrl").
+
 -define(FTYPE_BEACON, 3#000).
 -define(FTYPE_DATA, 2#001).
 -define(FTYPE_ACK, 2#010).
 -define(FTYPE_MACCOM, 2#011).
-
--define(ENABLED, 2#1).
--define(DISABLED, 2#0).
 
 -define(NONE, 2#00).
 -define(SHORT_ADDR, 2#10).
@@ -12,7 +11,6 @@
 
 
 -type ftype() :: ?FTYPE_BEACON | ?FTYPE_DATA | ?FTYPE_ACK | ?FTYPE_MACCOM.
--type flag() :: ?ENABLED | ?DISABLED.
 -type addr_mode() :: ?NONE | ?SHORT_ADDR | ?EXTENDED.
 
 % @doc frame control of a MAC header for IEEE 802.15.4
