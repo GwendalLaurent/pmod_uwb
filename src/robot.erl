@@ -7,7 +7,7 @@
 
 -export([test_sys_clock/1]).
 -export([send_mac/1, receive_mac/0]).
--export([send_and_wait_ack/1, receive_and_ack/0, receive_data/1]).
+-export([send_and_wait_ack/1, receive_and_ack/0, receive_data_jitter/1]).
 -export([test_receiver/0, test_sender/0, test_sender_ack/0, test_receiver_ack/0]).
 
 % Callbacks
@@ -37,16 +37,16 @@ send_and_wait_ack(Data, SrcPAN, SrcAddr) ->
 receive_and_ack() ->
     pmod_uwb:write(sys_cfg, #{ffad => 2#1, ffaa => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
     pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
-    receive_data(1). % Here we just want to receive one frame
+    receive_data_jitter(1). % Here we just want to receive one frame
     
-test_receiver() -> receive_data(100).
+test_receiver() -> receive_data_jitter(100).
 
 test_sender() -> send_data(0, 100).
 
 test_receiver_ack() ->
     pmod_uwb:write(sys_cfg, #{ffad => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
     pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
-    receive_data(20).
+    receive_data_jitter(20).
 
 test_sender_ack() ->
     pmod_uwb:write(rx_fwto, #{rxfwto => 16#FFFF}),
@@ -72,16 +72,21 @@ test_sys_clock(N) ->
     test_sys_clock(N-1).
 
 %--- Private -------------------------------------------------------------------
-receive_data(0) -> ok;
-receive_data(N) ->
+receive_data_jitter(0) -> ok;
+receive_data_jitter(N) ->
     case mac_layer:mac_receive(false) of
         {#frame_control{frame_type = ?FTYPE_DATA} = _FrameControl, MacHeader, Data} -> 
             io:format("Received data from ~w with seqnum ~w~n Data: ~w~n", [MacHeader#mac_header.src_addr, MacHeader#mac_header.seqnum, binary_to_list(Data)]),
-            receive_data(N-1);
+            % Simulates some delay in the network for every frame out of 4
+            case rand:uniform(4) of
+                1 -> timer:sleep(200);
+                _ -> ok
+            end,
+            receive_data_jitter(N-1);
         {_, _, _} -> io:format("Received unexpected frame~n"),
-                     receive_data(N);
+                     receive_data_jitter(N);
         Err -> io:format("Reception error: ~w~n", [Err]),
-               receive_data(N)
+               receive_data_jitter(N)
     end.
 
 send_data(Max, Max) -> ok;
@@ -114,8 +119,8 @@ send_data_wait_ack(Cnt, Max, SrcAddr, TrialsLeft, TotTrialsAllowed) ->
                                                                                                                              send_data_wait_ack(Cnt+1, Max, SrcAddr, TotTrialsAllowed, TotTrialsAllowed);
         {_RxFrameControl, _RxMacHeader, RxData} -> io:format("Received MAC frame but not ACK: ~w~n", [RxData]),
                                                    send_data_wait_ack(Cnt, Max, SrcAddr, TrialsLeft, TotTrialsAllowed);
-        Err -> io:format("Reception error: ~w~n Trying again...~n", [Err]),
-               pmod_uwb:write(sys_status, #{rxfto => 2#1}),
+        _ -> io:format("Reception error. Trying again...~n"),
+               pmod_uwb:write(sys_status, #{rxfto => 2#1}), % reset rxfto to avoid false t.o.
                send_data_wait_ack(Cnt, Max, SrcAddr, TrialsLeft-1, TotTrialsAllowed)
     end.
 
