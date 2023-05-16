@@ -46,7 +46,7 @@ test_sender() -> send_data(0, 100).
 test_receiver_ack() ->
     pmod_uwb:write(sys_cfg, #{ffad => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
     pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
-    receive_data(10000).
+    receive_data(20).
 
 test_sender_ack() ->
     pmod_uwb:write(rx_fwto, #{rxfwto => 1000}),
@@ -54,7 +54,7 @@ test_sender_ack() ->
     #{short_addr := SrcAddr} = pmod_uwb:read(panadr),
     pmod_uwb:write(sys_cfg, #{ffaa => 2#1, autoack => 2#1}), % allow ACK and data frame reception and enable autoack
     pmod_uwb:write(sys_cfg, #{ffen => 2#1}), % enable frame filtering and allow ACK frame reception and enable autoack
-    send_data_wait_ack(0, 10000, SrcAddr, 5, 5).
+    send_data_wait_ack(0, 20, SrcAddr, 5, 5).
 
 send_mac(Data) -> 
     #{pan_id := SrcPAN, short_addr := SrcAddr} = pmod_uwb:read(panadr),
@@ -82,7 +82,7 @@ receive_data(0, _) -> error({reception_error, "Maximum trials allowed reached"})
 receive_data(TrialsLeft, MaxTrialsAllowed) ->
     case mac_layer:mac_receive(false) of
         {#frame_control{frame_type = ?FTYPE_DATA} = _FrameControl, MacHeader, Data} -> 
-            io:format("Received data from ~w with seqnum ~w~n Data: ~w~n", [binary:encode_hex(MacHeader#mac_header.src_addr), MacHeader#mac_header.seqnum, binary_to_list(Data)]),
+            io:format("Received data from ~w with seqnum ~w~n Data: ~w~n", [MacHeader#mac_header.src_addr, MacHeader#mac_header.seqnum, binary_to_list(Data)]),
             Data;
         {_, _, _} -> io:format("Received unexpected frame~n");
         Err -> io:format("Reception error: ~w~n", [Err]),
@@ -115,8 +115,8 @@ send_data_wait_ack(Cnt, Max, SrcAddr, TrialsLeft, TotTrialsAllowed) ->
     io:format("Sending message #~w~n", [Cnt]),
     case mac_layer:mac_send_data(FrameControl, MacHeader, <<"Data">>, #tx_opts{wait4resp = ?ENABLED}) of
         {#frame_control{frame_type = ?FTYPE_ACK} = _RxFrameControl, #mac_header{seqnum = Seqnum} = _RxMacHeader, _RxData} -> io:format("ACK received for frame seqnum ~w~n", [_RxMacHeader#mac_header.seqnum]),
-                                                                                                                          timer:sleep(50),
-                                                                                                                          send_data_wait_ack(Cnt+1, Max, SrcAddr, TotTrialsAllowed, TotTrialsAllowed);
+                                                                                                                             timer:sleep(50),
+                                                                                                                             send_data_wait_ack(Cnt+1, Max, SrcAddr, TotTrialsAllowed, TotTrialsAllowed);
         {_RxFrameControl, _RxMacHeader, RxData} -> io:format("Received MAC frame but not ACK: ~w~n", [RxData]),
                                                    send_data_wait_ack(Cnt, Max, SrcAddr, TrialsLeft, TotTrialsAllowed);
         Err -> io:format("Reception error: ~w~n Trying again...~n", [Err]),
