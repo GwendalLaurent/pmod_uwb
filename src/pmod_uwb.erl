@@ -211,7 +211,7 @@ reception(RXEnabled) ->
     case wait_for_reception() of
         ok -> write(sys_status, #{rxfcg => 1}), % Clearing good CRC indicating good RX
               get_received_data();
-        Err -> error({reception_error, Err})
+        Err -> Err
     end.
 
 
@@ -222,6 +222,7 @@ enable_rx() ->
 
 wait_for_reception() ->
     case read(sys_status) of 
+        #{rxrfto := 1} -> rxrfto;
         #{rxphe := 1} -> rxphe;
         #{rxfce := 1} -> rxfce;
         #{rxrfsl := 1} -> rxrfsl;
@@ -260,7 +261,7 @@ init(Slot) ->
     grisp_devices:register(Slot, ?MODULE),
     Bus = grisp_spi:open(Slot),
     case verify_id(Bus) of
-        ok -> softrest(Bus);
+        ok -> softreset(Bus);
         Val -> error({dev_id_no_match, Val})
     end,
     ldeload(Bus),
@@ -303,7 +304,7 @@ verify_id(Bus) ->
 %% @private
 %% Performs a softreset on the pmod
 %% ---------------------------------------------------------------------------------------
-softrest(Bus) ->
+softreset(Bus) ->
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
@@ -335,7 +336,6 @@ config(Bus) ->
     write_reg(Bus, pmsc, #{pmsc_ledc => #{blnken => 2#1}}),
     write_reg(Bus, dig_diag, #{evc_ctrl => #{evc_en => 2#1}}), % enable counting event for debug purposes
     % write_reg(Bus, sys_cfg, #{rxwtoe => 2#1}),
-    % write_reg(Bus, rx_fwto, #{rxfwto => 5000}). % TO of 5 sec
     write_reg(Bus, tx_fctrl, #{txpsr => 2#10}). % Setting preamble symbols to 1024
     
 

@@ -88,8 +88,10 @@ mac_receive() ->
 %-------------------------------------------------------------------------------
 -spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_receive(RXEnab) ->
-    {_Length, Data} = pmod_uwb:reception(RXEnab),
-    mac_decode(Data).
+    case pmod_uwb:reception(RXEnab) of
+        {_Length, Data} -> mac_decode(Data);
+        Err -> Err
+    end.
 
 %--- Internal ------------------------------------------------------------------
 
@@ -127,10 +129,17 @@ build_mac_header(FrameControl, MacHeader) ->
 %-------------------------------------------------------------------------------
 -spec mac_decode(Data :: bitstring()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}. 
 mac_decode(Data) ->
+    io:format("~w~n", [Data]),
     <<FC:16/bitstring, Seqnum:8, Rest/bitstring>> = Data,
     FrameControl = decode_frame_control(FC),
     % TODO: Decode the pan/addrs + the payload 
     % MacHeader = #mac_header{seqnum = Seqnum},
+    io:format("Frame control: ~w~n Seqnum: ~w Rest: ~w~n", [FrameControl, Seqnum, Rest]),
+    decode_rest(FrameControl, Seqnum, Rest).
+
+decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) ->
+    {FrameControl, #mac_header{seqnum = Seqnum}, <<>>};
+decode_rest(FrameControl, Seqnum, Rest) ->
     [DestPan, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl)),
     SrcPan = case {FrameControl#frame_control.pan_id_compr, SrcPan_} of
                  {?ENABLED, <<>>} -> DestPan;
@@ -138,6 +147,7 @@ mac_decode(Data) ->
              end,
     MacHeader = #mac_header{seqnum = Seqnum, dest_pan = DestPan, dest_addr = DestAddr, src_pan = SrcPan, src_addr = SrcAddr},
     {FrameControl, MacHeader, Payload}.
+
 
 decode_addrs(dest_pan_id, Rest, FrameControl) ->
     case FrameControl#frame_control.dest_addr_mode of

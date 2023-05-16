@@ -39,3 +39,10 @@ decode_mac_message_uncompressed_pan_id_test() ->
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
     ?assertEqual({FrameControl, MacHeader, <<"Hello">>},
                  mac_layer:mac_decode(Message)).
+
+decode_ack_frame_from_device_test() ->
+    Message = <<16#0200:16, 50:8>>,
+    FrameControl = #frame_control{frame_type = ?FTYPE_ACK, src_addr_mode = ?NONE, dest_addr_mode = ?NONE},
+    MacHeader = #mac_header{seqnum = 50},
+    ?assertEqual({FrameControl, MacHeader, <<>>}, 
+                 mac_layer:mac_decode(Message)).
