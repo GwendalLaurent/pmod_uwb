@@ -113,7 +113,8 @@ send_data_wait_ack(Cnt, Max, SrcAddr, TrialsLeft, TotTrialsAllowed) ->
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED},
     MacHeader = #mac_header{seqnum = Seqnum, dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_addr = <<SrcAddr:16>>},
     io:format("Sending message #~w~n", [Cnt]),
-    case mac_layer:mac_send_data(FrameControl, MacHeader, <<"Data">>, #tx_opts{wait4resp = ?ENABLED}) of
+    mac_layer:mac_send_data(FrameControl, MacHeader, <<"Data">>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 0}),
+    case  mac_layer:mac_receive(true) of
         {#frame_control{frame_type = ?FTYPE_ACK} = _RxFrameControl, #mac_header{seqnum = Seqnum} = _RxMacHeader, _RxData} -> io:format("ACK received for frame seqnum ~w~n", [_RxMacHeader#mac_header.seqnum]),
                                                                                                                              timer:sleep(50),
                                                                                                                              send_data_wait_ack(Cnt+1, Max, SrcAddr, TotTrialsAllowed, TotTrialsAllowed);

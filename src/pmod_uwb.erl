@@ -5,7 +5,8 @@
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, reception/0, reception/1]).
--export([softreset/0]).
+-export([set_frame_timeout/1]).
+-export([softreset/0, clear_rx_flags/0]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
 
@@ -134,8 +135,6 @@ transmit(Data) when is_bitstring(Data) ->
 %% ---------------------------------------------------------------------------------------
 %% @doc Performs a transmission with the specified options
 %%
-%% If wait4resp is set to ENABLED, the function will wait until a reception or an error and will return the data received as well as its length
-%%
 %% === Options ===
 %% * wait4resp: It specifies that the reception must be enabled after the transmission in the expectation of a response
 %% * w4r-tim: Specifies the turn around time in microseconds. That is the time the pmod will wait before enabling rx after a tx. Note that it won't be set if wit4resp is disabled
@@ -143,29 +142,24 @@ transmit(Data) when is_bitstring(Data) ->
 %% * tx_delay: Specifies the delay of the transmission (see register DX_TIME)
 %%
 %% === Examples ===
-%% To transmit a frame:
+%% To transmit a frame with default options:
 %% ```
 %% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>, #tx_opts{}).
 %% ok.
 %% '''
-%% To transmit a frame with wait4resp set:
-%% ```
-%% 2> pmod_uwb:transmit(<<Version:4, NextHop:8>>, #tx_opts{wait4resp = ?ENABLED}).
-%% {RXLength, RXData}.
-%% '''
 %% @end
 %% ---------------------------------------------------------------------------------------
 transmit(Data, Options) ->
+    case Options#tx_opts.wait4resp of
+        ?ENABLED -> clear_rx_flags();
+        _ -> ok
+    end,
     call({transmit, Data, Options}),
     case read(sys_status) of
         #{hdpwarn := 2#1} -> error({hdpwarn});
         _ -> ok
     end,
-    wait_for_transmission(),
-    case Options#tx_opts.wait4resp of
-        ?ENABLED -> reception(true);
-        _ -> ok
-    end.
+    wait_for_transmission().
 
 %% @private
 %% Wait for the transmission to be performed
@@ -218,6 +212,7 @@ reception(RXEnabled) ->
 %% @private
 enable_rx() ->
     io:format("Enabling reception~n"),
+    clear_rx_flags(),
     call({write, sys_ctrl, #{rxenab => 2#1}}).
 
 wait_for_reception() ->
@@ -233,11 +228,18 @@ wait_for_reception() ->
         #{rxdfr := 0} -> wait_for_reception();
         #{rxfce := 1} -> rxfce;
         #{rxfcg := 1} -> ok;
+        % #{rxdfr := 1, rxfcg := 1} -> ok; % The example driver doesn't do that but the user manual says that how you should check the reception of a frame
         _ -> error({error_wait_for_reception})
     end.
 
-
-
+%% ---------------------------------------------------------------------------------------
+%% @doc Set the frame wait timeout and enables it
+%% @end
+%% ---------------------------------------------------------------------------------------
+-spec set_frame_timeout(Timeout :: miliseconds()) -> ok.
+set_frame_timeout(Timeout) -> 
+    write(rx_fwto, #{rxfwto => Timeout}),
+    write(sys_cfg, #{rxwtoe => 2#1}). % enable receive wait timeout
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Performs a reset of the IC following the procedure described in section 7.2.50.1 
@@ -248,6 +250,10 @@ softreset() ->
     write(pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write(pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
     write(pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
+
+
+clear_rx_flags() -> 
+    write(sys_status, #{rxsfdto => 2#1, rxpto => 2#1, rxrfto => 2#1, rxrfsl => 2#1, rxfce => 2#1, rxphe => 2#1, rxprd => 2#1, rxdsfdd => 2#1, rxphd => 2#1, rxdfr => 2#1, rxfcg => 2#1}).
     
 %--- Callbacks -----------------------------------------------------------------
 
@@ -390,7 +396,7 @@ delayed_tx(Bus, Data, Delay) ->
     write_reg(Bus, dx_time, #{dx_time => Delay}),
     DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
     write_tx_data(Bus, Data),
-    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
+    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tflen => DataLength}),
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1, txdlys => 2#1}). % start transmission
 
 %% ---------------------------------------------------------------------------------------

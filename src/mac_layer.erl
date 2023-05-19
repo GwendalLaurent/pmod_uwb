@@ -51,10 +51,7 @@ mac_send_data(FrameControl, MacHeader, Payload) ->
 -spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_send_data(FrameControl, MacHeader, Payload, Options) ->
     Message = mac_message(FrameControl, MacHeader, Payload),
-    case pmod_uwb:transmit(Message, Options) of 
-        {_DataLength, Data} -> mac_decode(Data);
-        _ -> ok
-    end.
+    pmod_uwb:transmit(Message, Options).
 
 %-------------------------------------------------------------------------------
 % @doc sends a MAC message using the pmod_uwb with some delay
@@ -88,6 +85,7 @@ mac_receive() ->
 %-------------------------------------------------------------------------------
 -spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_receive(RXEnab) ->
+    io:format("Waiting for reception~n"),
     case pmod_uwb:reception(RXEnab) of
         {_Length, Data} -> mac_decode(Data);
         Err -> Err
@@ -129,12 +127,10 @@ build_mac_header(FrameControl, MacHeader) ->
 %-------------------------------------------------------------------------------
 -spec mac_decode(Data :: bitstring()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}. 
 mac_decode(Data) ->
-    io:format("~w~n", [Data]),
     <<FC:16/bitstring, Seqnum:8, Rest/bitstring>> = Data,
     FrameControl = decode_frame_control(FC),
     % TODO: Decode the pan/addrs + the payload 
     % MacHeader = #mac_header{seqnum = Seqnum},
-    io:format("Frame control: ~w~n Seqnum: ~w Rest: ~w~n", [FrameControl, Seqnum, Rest]),
     decode_rest(FrameControl, Seqnum, Rest).
 
 decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) ->

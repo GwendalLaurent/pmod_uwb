@@ -12,6 +12,7 @@
 
 -type ftype() :: ?FTYPE_BEACON | ?FTYPE_DATA | ?FTYPE_ACK | ?FTYPE_MACCOM.
 -type addr_mode() :: ?NONE | ?SHORT_ADDR | ?EXTENDED.
+-type addr() :: bitstring().
 
 % @doc frame control of a MAC header for IEEE 802.15.4
 -record(frame_control, {frame_type = ?FTYPE_DATA :: ftype(),
@@ -26,7 +27,7 @@
 % @doc MAC header for IEEE 802.15.4
 % Doesn't include the frame control nor a potential auxiliary security header
 -record(mac_header, {seqnum = 0 :: integer(),
-                     dest_pan = <<16#FFFF:16>> :: bitstring(),
-                     dest_addr = <<16#FFFF:16>> :: bitstring(),
-                     src_pan = <<16#FFFF:16>> :: bitstring(),
-                     src_addr = <<16#FFFF:16>> :: bitstring()}).
+                     dest_pan = <<16#FFFF:16>> :: addr(),
+                     dest_addr = <<16#FFFF:16>> :: addr(),
+                     src_pan = <<16#FFFF:16>> :: addr(),
+                     src_addr = <<16#FFFF:16>> :: addr()}).
