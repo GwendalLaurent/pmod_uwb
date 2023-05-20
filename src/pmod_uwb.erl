@@ -224,7 +224,7 @@ wait_for_reception() ->
         #{rxpto := 1} -> rxpto; 
         #{rxsfdto := 1} -> rxsfdto;
         #{ldeerr := 1} -> ldeerr;
-        #{affrej := 1} -> affrej;
+        % #{affrej := 1} -> affrej;
         #{rxdfr := 0} -> wait_for_reception();
         #{rxfce := 1} -> rxfce;
         #{rxfcg := 1} -> ok;

@@ -21,17 +21,29 @@ ds_initiator() ->
     RX_ANTD = 16435, pmod_uwb:write(lde_if, #{lde_rxantd => RX_ANTD}),
     pmod_uwb:set_frame_timeout(16#FFFF),
     % ? Set preamble timeout too ?
-    ds_initiator_protocol(50, TX_ANTD).
+    ds_initiator_loop(50, TX_ANTD, {0,0,[],0}).
 
-ds_initiator_protocol(0, _) -> ok;
-ds_initiator_protocol(N, TX_ANTD) ->
+ds_initiator_loop(0, _, {Succeeded, Errors, _Measures, Total}) ->
+    SuccessRate = Succeeded / Total,
+    ErrorRate = Errors / Total,
+    io:format("-------------------------------- Summary --------------------------------~n"),
+    io:format("Sent ~w request - ratio: ~w/~w - Success rate: ~w - Error rate: ~w~n",[Total, Succeeded, Total, SuccessRate, ErrorRate]),
+    io:format("-------------------------------------------------------------------------~n");
+ds_initiator_loop(Left, TX_ANTD, {Succeeded, Errors, Measures, Total}) ->
+    case ds_initiator_protocol(TX_ANTD) of
+        ok -> ds_initiator_loop(Left - 1, TX_ANTD, {Succeeded+1, Errors, Measures, Total+1});
+        error -> ds_initiator_loop(Left, TX_ANTD, {Succeeded, Errors+1, Measures, Total+1}) % No response to Poll message -> try again
+    end.
+
+ds_initiator_protocol(TX_ANTD) ->
     % Sending the first frame
     FrameControl = #frame_control{pan_id_compr = ?ENABLED},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_addr = <<16#FFFF:16>>},
     % enabling wait4resp to avoid an early timeout. Here we know that resp will take at least 10000 µs
-    mac_layer:mac_send_data(FrameControl, MacHeader, <<"DS_INIT">>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 10000}),
+    mac_layer:mac_send_data(FrameControl, MacHeader, <<"DS_INIT">>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000}),
+    io:format("Poll message is sent~n"),
     case  mac_layer:mac_receive(true) of
-        {_, _, _Data} -> #{tx_stamp := PollTXTimestamp} = pmod_uwb:read(tx_time),
+        {_, _, <<"Resp_TX">>} -> #{tx_stamp := PollTXTimestamp} = pmod_uwb:read(tx_time),
                          #{rx_stamp := RespRXTimestamp} = pmod_uwb:read(rx_time),
                          FinalTXTime = RespRXTimestamp + (30000 * ?UUS_TO_DWT_TIME),
                          pmod_uwb:write(dx_time, #{dx_time => FinalTXTime}),
@@ -40,13 +52,13 @@ ds_initiator_protocol(N, TX_ANTD) ->
                          % For now, same MAC header but seqnum should increase
                          pmod_uwb:write(sys_status, #{txfcg => 2#1}),
                          mac_layer:mac_send_data(FrameControl, MacHeader, Message, #tx_opts{txdlys = ?ENABLED, tx_delay = FinalTXTime}),
+                         io:format("Final message sent~n"),
                          io:format("PollTX: ~w - RespRX ~w - FinalTX ~w~n", [PollTXTimestamp, RespRXTimestamp, FinalTXTimestamp]),
-                         io:format("Data sent~n");
+                         io:format("Data sent~n"),
+                         timer:sleep(100);
         Err -> io:format("Reception error: ~w~n", [Err]),
-               ok
-    end,
-    ds_initiator_protocol(N-1, TX_ANTD).
-
+               error
+    end.
 
 
 ds_responder() ->
@@ -54,20 +66,37 @@ ds_responder() ->
     TX_ANTD = 16436, pmod_uwb:write(tx_antd, #{tx_antd => TX_ANTD}),
     RX_ANTD = 16435, pmod_uwb:write(lde_if, #{lde_rxantd => RX_ANTD}),
     % ? Set preamble timeout too ?
-    pmod_uwb:write(sys_cfg, #{rxwtoe  => 2#0}),
-    ds_responder_protocol(50, TX_ANTD, RX_ANTD).
-
-ds_responder_protocol(0, _, _) -> ok;
-ds_responder_protocol(N, TX_ANTD, RX_ANTD) ->
     % Disabling wait t.o. for Poll frame
+    ds_responder_loop(50, TX_ANTD, {0, 0, [], 0}).
+
+ds_responder_loop(0, _, {Succeeded, Errors, Measures, Total}) ->
+    SuccessRate = Succeeded/Total,
+    ErrorRate = Errors/Total,
+    MeasureAVG = lists:sum(Measures)/Succeeded,
+    StdDev = std_dev(Measures, MeasureAVG, Succeeded, 0),
+    io:format("-------------------------------- Summary --------------------------------~n"),
+    io:format("Received ~w request - ratio: ~w/~w - Success rate: ~w - Error rate: ~w~n",[Total, Succeeded, Total, SuccessRate, ErrorRate]),
+    io:format("Average distance measured: ~w - standard deviation: ~w ~n", [MeasureAVG, StdDev]),
+    io:format("-------------------------------------------------------------------------~n");
+ds_responder_loop(N, TX_ANTD, {Succeeded, Errors, Measures, Total}) ->
+    pmod_uwb:write(sys_cfg, #{rxwtoe  => 2#0}),
+    case ds_responder_protocol(TX_ANTD) of
+        error_rx_poll -> ds_responder_loop(N, TX_ANTD, {Succeeded, Errors+1, Measures, Total+1});
+        error -> ds_responder_loop(N-1, TX_ANTD, {Succeeded, Errors+1, Measures, Total+1});
+        Distance -> ds_responder_loop(N-1, TX_ANTD, {Succeeded+1, Errors, [Distance | Measures], Total+1})
+    end.
+
+ds_responder_protocol(_TX_ANTD) ->
     case mac_layer:mac_receive() of
-        {FrameControl, MacHeader, _} -> 
+        {FrameControl, MacHeader, <<"DS_INIT">>} -> 
+            io:format("Poll message received~n"),
             pmod_uwb:set_frame_timeout(16#FFFF), % TODO set back again later
             #{rx_stamp := PollRXTimestamp} = pmod_uwb:read(rx_time),
             RespTXTime = PollRXTimestamp + (20000 * ?UUS_TO_DWT_TIME),
             pmod_uwb:write(dx_time, #{dx_time => RespTXTime}),
             RespMacHeader = #mac_header{src_addr = <<16#FFFF:16>>, dest_pan = MacHeader#mac_header.src_pan, dest_addr = MacHeader#mac_header.src_addr, seqnum = MacHeader#mac_header.seqnum},
-            mac_layer:mac_send_data(FrameControl, RespMacHeader, <<(RespTXTime + TX_ANTD):40>>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000}),
+            mac_layer:mac_send_data(FrameControl, RespMacHeader, <<"Resp_TX">>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000}),
+            io:format("Response message sent~n"),
             case mac_layer:mac_receive(true)of
                 {_, _, <<PollTXTimestamp:40, RespRXTimestamp:40, FinalTXTimestamp:40>>} ->
                     #{tx_stamp := RespTXTimestamp} = pmod_uwb:read(tx_time),
@@ -85,12 +114,12 @@ ds_responder_protocol(N, TX_ANTD, RX_ANTD) ->
                     io:format("PollRX: ~w - RespTX ~w - FinalRX ~w~n", [PollRXTimestamp, RespTXTimestamp, FinalRXTimestamp]),
                     io:format("TRound1: ~w - TRound2 ~w - TReply1 ~w - TReply2 ~w ~n", [TRound1, TRound2, TReply1, TReply2]),
                     io:format("Computed distance: ~w~n", [Distance]),
-                    ds_responder_protocol(N-1, TX_ANTD, RX_ANTD);
+                    Distance;
                 Err -> io:format("Reception error: ~w~n", [Err]),
-                       ds_responder_protocol(N-1, TX_ANTD, RX_ANTD)
+                       error
             end;
         Err -> io:format("Receiving error: ~w~n", [Err]), 
-               ds_responder_protocol(N-1, TX_ANTD, RX_ANTD)
+               error_rx_poll
     end.
 
 
@@ -150,3 +179,13 @@ ss_responder(N) ->
 
 ss_responder() ->
     ss_responder(1).
+
+
+
+%--- Tool functions for stats -------------------------------------------------------------------
+
+-spec std_dev(Measures :: list(), Mean :: number(), N :: number(), Acc :: number()) -> number().
+std_dev([], _, N, Acc) ->
+    math:sqrt(Acc/N);
+std_dev([H | T], Mean, N, Acc) ->
+    std_dev(T, Mean, N, Acc + math:pow(H-Mean, 2)).
