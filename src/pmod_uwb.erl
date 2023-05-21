@@ -228,6 +228,7 @@ wait_for_reception() ->
         #{rxdfr := 0} -> wait_for_reception();
         #{rxfce := 1} -> rxfce;
         #{rxfcg := 1} -> ok;
+        #{rxfcg := 0} -> wait_for_reception();
         % #{rxdfr := 1, rxfcg := 1} -> ok; % The example driver doesn't do that but the user manual says that how you should check the reception of a frame
         _ -> error({error_wait_for_reception})
     end.
