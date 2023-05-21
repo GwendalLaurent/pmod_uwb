@@ -46,3 +46,21 @@ decode_ack_frame_from_device_test() ->
     MacHeader = #mac_header{seqnum = 50},
     ?assertEqual({FrameControl, MacHeader, <<>>}, 
                  mac_layer:mac_decode(Message)).
+
+% If Src address mode is zero and frame isn't an ACK. It implies that the frame comes from the PAN coordinator
+decode_mac_message_no_src_test() -> 
+    Message = <<16#4108:16, 22:8, 16#CADE:16, 16#CDAB:16, "Test">>,
+    FrameControl = #frame_control{frame_type = ?FTYPE_DATA, pan_id_compr = ?ENABLED, dest_addr_mode = ?SHORT_ADDR, src_addr_mode = ?NONE},
+    % SRC addr set to zero because can't imply the addr of the PAN coordinator at this level
+    MacHeader = #mac_header{seqnum = 22, dest_pan = <<16#DECA:16>>, dest_addr = <<16#ABCD:16>>, src_pan = <<16#DECA:16>>, src_addr = <<>>},
+    ?assertEqual({FrameControl, MacHeader, <<"Test">>},
+                 mac_layer:mac_decode(Message)).
+
+decode_mac_message_no_src_no_compt_test() -> 
+    Message = <<16#0108:16, 22:8, 16#CADE:16, 16#CDAB:16, "Test">>,
+    FrameControl = #frame_control{frame_type = ?FTYPE_DATA, pan_id_compr = ?DISABLED, dest_addr_mode = ?SHORT_ADDR, src_addr_mode = ?NONE},
+    % SRC addr set to zero because can't imply the addr of the PAN coordinator at this level
+    MacHeader = #mac_header{seqnum = 22, dest_pan = <<16#DECA:16>>, dest_addr = <<16#ABCD:16>>, src_pan = <<16#DECA:16>>, src_addr = <<>>},
+    ?assertEqual({FrameControl, MacHeader, <<"Test">>},
+                 mac_layer:mac_decode(Message)).
+

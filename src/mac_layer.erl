@@ -2,10 +2,9 @@
 
 -include("mac_layer.hrl").
 
--export([delayed_mac_send_data/4]).
 -export([mac_send_data/3, mac_send_data/4, mac_receive/0, mac_receive/1]).
 -export([mac_decode/1]).
--export([mac_message/2, mac_message/3]).
+-export([mac_frame/2, mac_frame/3]).
 
 % Not used for now, might use it later for more clarity
 % -type decoded_mac() :: {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
@@ -14,26 +13,26 @@
 
 
 %-------------------------------------------------------------------------------
-% @doc builds a mac message without a payload
-% @equiv mac_message(FrameControl, MacHeader, <<>>)
+% @doc builds a mac frame without a payload
+% @equiv mac_frame(FrameControl, MacHeader, <<>>)
 % @end
 %-------------------------------------------------------------------------------
--spec mac_message(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}) -> bitstring().
-mac_message(FrameControl, MacHeader) ->
-    mac_message(FrameControl, MacHeader, <<>>).
+-spec mac_frame(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}) -> bitstring().
+mac_frame(FrameControl, MacHeader) ->
+    mac_frame(FrameControl, MacHeader, <<>>).
+
 %-------------------------------------------------------------------------------
-% @doc builds a mac message
-% @returns a MAC message ready to be transmitted in a bitstring (not including the CRC automatically added by the DW1000)
+% @doc builds a mac frame
+% @returns a MAC frame ready to be transmitted in a bitstring (not including the CRC automatically added by the DW1000)
 % @end
 %-------------------------------------------------------------------------------
--spec mac_message(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> bitstring().
-mac_message(FrameControl, MacHeader, Payload) ->
+-spec mac_frame(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> bitstring().
+mac_frame(FrameControl, MacHeader, Payload) ->
     Header = build_mac_header(FrameControl, MacHeader),
     <<Header/bitstring, Payload/bitstring>>.
 
-
 %-------------------------------------------------------------------------------
-% @doc Sends a MAC message using the pmod_uwb without any options
+% @doc Sends a MAC frame using the pmod_uwb without any options
 % The 2 bytes CRC are automatically added at the end of the payload and
 % must not be included in the Payload given in the arguments
 %-------------------------------------------------------------------------------
@@ -42,46 +41,32 @@ mac_send_data(FrameControl, MacHeader, Payload) ->
     mac_send_data(FrameControl, MacHeader, Payload, #tx_opts{}).
 
 %-------------------------------------------------------------------------------
-% @doc Sends a MAC message using the pmod_uwb using the specified options 
+% @doc Sends a MAC frame using the pmod_uwb using the specified options 
 % The 2 bytes CRC are automatically added at the end of the payload and
 % must not be included in the Payload given in the arguments
-%
-% If the option wait4resp is enabled, the function will wait for the reception and return the decoded frame
+% @end
 %-------------------------------------------------------------------------------
 -spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_send_data(FrameControl, MacHeader, Payload, Options) ->
-    Message = mac_message(FrameControl, MacHeader, Payload),
+    Message = mac_frame(FrameControl, MacHeader, Payload),
     pmod_uwb:transmit(Message, Options).
 
 %-------------------------------------------------------------------------------
-% @doc sends a MAC message using the pmod_uwb with some delay
-% The 2 bytes CRC are automatically added at the end of the payload and
-% must not be included in the Payload given in the arguments
-%
-% The delay must be exprimed in system time unit. NB: the lower 9 bits are ignored to compute the delay
-%-------------------------------------------------------------------------------
--spec delayed_mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Delay :: integer()) -> ok.
-delayed_mac_send_data(FrameControl, MacHeader, Payload, Delay) ->
-    Message = mac_message(FrameControl, MacHeader, Payload),
-    Options = #tx_opts{txdlys = ?ENABLED, tx_delay = Delay}, 
-    pmod_uwb:transmit(Message, Options).
-
-%-------------------------------------------------------------------------------
-% @doc Receive a message using the pmod_uwb and decode the message 
+% @doc Receive a frame using the pmod_uwb and decode the frame 
 %
 % @equiv mac_receive(false)
 %
-% @return the received mac message decoded
+% @return the received mac frame decoded
 %-------------------------------------------------------------------------------
 -spec mac_receive() -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_receive() ->
     mac_receive(false).
 
 %-------------------------------------------------------------------------------
-% @doc Receive a message using the pmod_uwb and decode the message 
+% @doc Receive a frame using the pmod_uwb and decode the frame 
 % @param RXEnab indicates if the reception was already enabled (or is enabled with delay)
 % <b>Warning:</b> if this function is called with RXEnab = true and the reception isn't set, the driver will be stuck in a loop without any timeout
-% @return the received mac message decoded
+% @return the received mac frame decoded
 %-------------------------------------------------------------------------------
 -spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_receive(RXEnab) ->
@@ -94,8 +79,8 @@ mac_receive(RXEnab) ->
 %--- Internal ------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
-% @doc builds a mac header based on the FrameControl and the MacHeader structures 
-% given in the args.
+% @doc builds a mac header based on the FrameControl and the MacHeader structures given in the args.
+% <b> The MAC header doesn't support security fields yet </b>
 % @returns the MAC header in a bitstring
 % @end
 %-------------------------------------------------------------------------------
@@ -114,16 +99,17 @@ build_mac_header(FrameControl, MacHeader) ->
     SrcAddr= reverse_byte_order(MacHeader#mac_header.src_addr, <<>>),
     SrcAddrFields = case {FrameControl#frame_control.src_addr_mode, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.dest_addr_mode} of
                         {?NONE, _, _} -> <<>>;
-                        {_, ?DISABLED, _} -> <<SrcPan/bitstring, SrcAddr/bitstring>>;
-                        {_, ?ENABLED, ?NONE}  -> <<SrcPan/bitstring, SrcAddr/bitstring>>;
-                        {_, ?ENABLED, _} -> <<SrcAddr/bitstring>>
+                        {_, ?DISABLED, _} -> <<SrcPan/bitstring, SrcAddr/bitstring>>; % if no compression is applied on PANID and SRC addr is present
+                        {_, ?ENABLED, ?NONE}  -> <<SrcPan/bitstring, SrcAddr/bitstring>>; % if there is a compression of the PANID but the dest addr isn't present
+                        {_, ?ENABLED, _} -> <<SrcAddr/bitstring>> % if there is a compression of the PANID and the dest addr is present
                     end,
     <<FC/bitstring,  (MacHeader#mac_header.seqnum):8, DestAddrFields/bitstring, SrcAddrFields/bitstring>>.
 
 
 %-------------------------------------------------------------------------------
-% @doc decodes the MAC message given in the arguments
+% @doc decodes the MAC frame given in the arguments
 % @return A tuple containing the decoded frame control, the decoded mac header and the payload
+% @end
 %-------------------------------------------------------------------------------
 -spec mac_decode(Data :: bitstring()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}. 
 mac_decode(Data) ->
@@ -133,18 +119,39 @@ mac_decode(Data) ->
     % MacHeader = #mac_header{seqnum = Seqnum},
     decode_rest(FrameControl, Seqnum, Rest).
 
+%-------------------------------------------------------------------------------
+% @private
+% @doc Decodes the remaining sequence of bit present in the payload after the seqnum
+% @end
+%-------------------------------------------------------------------------------
 decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) ->
     {FrameControl, #mac_header{seqnum = Seqnum}, <<>>};
 decode_rest(FrameControl, Seqnum, Rest) ->
-    [DestPan, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl)),
-    SrcPan = case {FrameControl#frame_control.pan_id_compr, SrcPan_} of
-                 {?ENABLED, <<>>} -> DestPan;
-                 _ -> SrcPan_
+    [DestPan_, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl)),
+    DestPan = case {DestPan_, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.frame_type} of 
+                  {<<>>, ?ENABLED, _} -> SrcPan_; % Can always deduce if the compression is enabled
+                  {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression isn't enabled and ACK => can't deduce
+                  {<<>>, ?DISABLED, ?FTYPE_BEACON} -> <<>>; % if compression isn't enabled and BEACON => can't deduce
+                  {<<>>, ?DISABLED, _} -> SrcPan_; % Other wise destination is PAN coord with same PANID as SRC
+                  {_, _, _} -> DestPan_
+              end,
+    SrcPan = case {SrcPan_, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.frame_type} of
+                 {<<>>, ?ENABLED, _} -> DestPan;
+                 {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression is disabled and frame type is an ACK => can't deduce (e.g. ACK comming from outside the PAN
+                 {<<>>, ?DISABLED, _} -> DestPan;
+                 {_, _, _} -> SrcPan_
              end,
     MacHeader = #mac_header{seqnum = Seqnum, dest_pan = DestPan, dest_addr = DestAddr, src_pan = SrcPan, src_addr = SrcAddr},
     {FrameControl, MacHeader, Payload}.
 
 
+%-------------------------------------------------------------------------------
+% @private
+% @doc decode the address fields present in the remaining sequence of bits based on the settings inside Framecontrol
+%
+% The first parameter is an atom representing the the field that should be parsed next
+% @end
+%-------------------------------------------------------------------------------
 decode_addrs(dest_pan_id, Rest, FrameControl) ->
     case FrameControl#frame_control.dest_addr_mode of
         ?NONE -> [<<>>, <<>>, decode_addrs(src_pan_id, Rest, FrameControl)];
@@ -156,19 +163,19 @@ decode_addrs(dest_addr, Rest, FrameControl) ->
         ?SHORT_ADDR -> <<Addr:16/bitstring, Tail/bitstring>> = Rest, 
                        [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)];
         ?EXTENDED -> <<Addr:64/bitstring, Tail/bitstring>> = Rest, 
-                     [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)]
+                     [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)];
+        _ -> io:format("Frame control dest_addr: ~w~n", [FrameControl#frame_control.dest_addr_mode])
     end;
 decode_addrs(src_pan_id, Rest, FrameControl) ->
-    case {FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.dest_addr_mode} of
-        {?DISABLED, _} -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, 
-                          [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl)];
-        {?ENABLED, ?NONE} -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, 
-                             [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl)];
-        {?ENABLED, _} -> [<<>>, decode_addrs(src_addr, Rest, FrameControl)]
+    case {FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.src_addr_mode} of
+        {?ENABLED, _} -> [<<>>, decode_addrs(src_addr, Rest, FrameControl)];
+        {_, ?NONE} -> [<<>>, <<>>, Rest];
+        _ -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, % If compr disabled and src_addr_mode isn't none
+             [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl)]
     end;
 decode_addrs(src_addr, Rest, FrameControl) ->
     case FrameControl#frame_control.src_addr_mode of
-        ?NONE -> Rest; 
+        ?NONE -> [<<>>, Rest]; 
         ?SHORT_ADDR -> <<Addr:16/bitstring, Payload/bitstring>> = Rest, 
                        [reverse_byte_order(Addr), Payload];
         ?EXTENDED -> <<Addr:64/bitstring, Payload/bitstring>> = Rest, 
@@ -193,6 +200,7 @@ build_frame_control(FrameControl) ->
 %-------------------------------------------------------------------------------
 % @private
 % @doc Decode the frame control given in a bitstring form in the parameters
+% @end
 %-------------------------------------------------------------------------------
 -spec decode_frame_control(FC :: bitstring) -> #frame_control{}.
 decode_frame_control(FC) -> 
