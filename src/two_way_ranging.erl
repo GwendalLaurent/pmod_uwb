@@ -14,14 +14,16 @@
 -define(FREQ_OFFSET_MULTIPLIER, 1/( 131072 * 2 * (1024/998.4e6))).
 -define(HERTZ_TO_PPM_MUL, 1.0e-6/6489.6e6).
 
+-define(NBR_MEASUREMENTS, 250).
+
 %--- Double-sided two-way ranging -------------------------------------------------------------------
 ds_initiator() ->
     % Set the antenna delay -> !! the values should be calibrated
-    TX_ANTD = 16436, pmod_uwb:write(tx_antd, #{tx_antd => TX_ANTD}),
+    TX_ANTD = 16350, pmod_uwb:write(tx_antd, #{tx_antd => TX_ANTD}),
     RX_ANTD = 16435, pmod_uwb:write(lde_if, #{lde_rxantd => RX_ANTD}),
     pmod_uwb:set_frame_timeout(16#FFFF),
     % ? Set preamble timeout too ?
-    ds_initiator_loop(50, TX_ANTD, {0,0,[],0}).
+    ds_initiator_loop(?NBR_MEASUREMENTS, TX_ANTD, {0,0,[],0}).
 
 ds_initiator_loop(0, _, {Succeeded, Errors, _Measures, Total}) ->
     SuccessRate = Succeeded / Total,
@@ -67,7 +69,8 @@ ds_responder() ->
     RX_ANTD = 16435, pmod_uwb:write(lde_if, #{lde_rxantd => RX_ANTD}),
     % ? Set preamble timeout too ?
     % Disabling wait t.o. for Poll frame
-    ds_responder_loop(50, TX_ANTD, {0, 0, [], 0}).
+    Measures = ds_responder_loop(?NBR_MEASUREMENTS, TX_ANTD, {0, 0, [], 0}),
+    io:format("~w~n", [Measures]).
 
 ds_responder_loop(0, _, {Succeeded, Errors, Measures, Total}) ->
     SuccessRate = Succeeded/Total,
@@ -77,7 +80,9 @@ ds_responder_loop(0, _, {Succeeded, Errors, Measures, Total}) ->
     io:format("-------------------------------- Summary --------------------------------~n"),
     io:format("Received ~w request - ratio: ~w/~w - Success rate: ~w - Error rate: ~w~n",[Total, Succeeded, Total, SuccessRate, ErrorRate]),
     io:format("Average distance measured: ~w - standard deviation: ~w ~n", [MeasureAVG, StdDev]),
-    io:format("-------------------------------------------------------------------------~n");
+    io:format("Min: ~w - Max ~w~n", [lists:min(Measures), lists:max(Measures)]),
+    io:format("-------------------------------------------------------------------------~n"),
+    Measures;
 ds_responder_loop(N, TX_ANTD, {Succeeded, Errors, Measures, Total}) ->
     pmod_uwb:write(sys_cfg, #{rxwtoe  => 2#0}),
     case ds_responder_protocol(TX_ANTD) of
@@ -114,7 +119,10 @@ ds_responder_protocol(_TX_ANTD) ->
                     io:format("PollRX: ~w - RespTX ~w - FinalRX ~w~n", [PollRXTimestamp, RespTXTimestamp, FinalRXTimestamp]),
                     io:format("TRound1: ~w - TRound2 ~w - TReply1 ~w - TReply2 ~w ~n", [TRound1, TRound2, TReply1, TReply2]),
                     io:format("Computed distance: ~w~n", [Distance]),
-                    Distance;
+                    if 
+                        (PollTXTimestamp =< RespRXTimestamp) and (RespRXTimestamp =< FinalTXTimestamp) and (PollRXTimestamp =< RespTXTimestamp) and (RespTXTimestamp =< FinalRXTimestamp) -> Distance;
+                        true -> io:format("Small error~n"), error % There was a wrap around in the clock of one of the GRIP - Throw away the result
+                    end;
                 Err -> io:format("Reception error: ~w~n", [Err]),
                        error
             end;
