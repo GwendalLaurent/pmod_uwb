@@ -49,6 +49,7 @@ mac_send_data(FrameControl, MacHeader, Payload) ->
 -spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_send_data(FrameControl, MacHeader, Payload, Options) ->
     Message = mac_frame(FrameControl, MacHeader, Payload),
+    io:format("Frame size w/o CRC: ~w~n", [byte_size(Message)]),
     pmod_uwb:transmit(Message, Options).
 
 %-------------------------------------------------------------------------------

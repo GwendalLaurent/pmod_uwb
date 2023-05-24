@@ -8,8 +8,11 @@ measurements = pd.read_csv(sys.argv[1],names=["Measurements"], index_col=False).
 print(measurements)
 avg = measurements["Measurements"].mean()
 
-plt.plot(measurements)
-plt.axhline(y=avg, color="r")
+plt.plot(measurements, label="measured distances")
+# plt.axhline(y=avg, color="r", label="Average")
+plt.xlabel("Time")
+plt.ylabel("Distance (m)")
+plt.legend()
 plt.show(block=True)
 
 rounded = measurements.round(2)

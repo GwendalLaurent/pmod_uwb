@@ -4,7 +4,7 @@
 %% API
 -export([start_link/2]).
 -export([init/1, handle_call/3, handle_cast/2]).
--export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, reception/0, reception/1]).
+-export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, wait_for_transmission/0, reception/0, reception/1]).
 -export([set_frame_timeout/1]).
 -export([softreset/0, clear_rx_flags/0]).
 
@@ -161,7 +161,6 @@ transmit(Data, Options) ->
     end,
     wait_for_transmission().
 
-%% @private
 %% Wait for the transmission to be performed
 %% usefull in the case of a delayed transmission
 wait_for_transmission() ->
@@ -203,7 +202,7 @@ reception(RXEnabled) ->
        true -> ok
     end,
     case wait_for_reception() of
-        ok -> write(sys_status, #{rxfcg => 1}), % Clearing good CRC indicating good RX
+        ok -> % write(sys_status, #{rxfcg => 1}),
               get_received_data();
         Err -> Err
     end.
@@ -216,6 +215,7 @@ enable_rx() ->
     call({write, sys_ctrl, #{rxenab => 2#1}}).
 
 wait_for_reception() ->
+    % io:format("Wait for resp~n"),
     case read(sys_status) of 
         #{rxrfto := 1} -> rxrfto;
         #{rxphe := 1} -> rxphe;
@@ -224,7 +224,7 @@ wait_for_reception() ->
         #{rxpto := 1} -> rxpto; 
         #{rxsfdto := 1} -> rxsfdto;
         #{ldeerr := 1} -> ldeerr;
-        % #{affrej := 1} -> affrej;
+        #{affrej := 1} -> affrej;
         #{rxdfr := 0} -> wait_for_reception();
         #{rxfce := 1} -> rxfce;
         #{rxfcg := 1} -> ok;
