@@ -43,7 +43,7 @@ ss_initiator(N, Measurements) ->
     Measure = ss_initiator_loop(),
     io:format("~w~n", [Measure]),
     timer:sleep(100),
-    case Measure of % Throws measures bigger than the circumference of the earth (measurements due to clock wrap around ?)
+    case Measure of 
         error -> ss_initiator(N-1, Measurements);
         _ -> ss_initiator(N-1, [Measure | Measurements])
     end.
@@ -74,7 +74,7 @@ ss_initiator_loop() ->
     ClockOffsetRatio = (DRX_CAR_INT * ?FREQ_OFFSET_MULTIPLIER *  ?HERTZ_TO_PPM_MUL),
     
     io:format("PollTX ~w - RespRX ~w - PollRX ~w - RespTX ~w~n", [PollTXTimestamp, RespRXTimestamp, PollRXTimestamp, RespTXTimestamp]),
-    TimeOfFlight = ( (TRound - TResp) * ((1-ClockOffsetRatio)/2) ) * ?TU, % TODO include the antenna delay
+    TimeOfFlight = ( (TRound - TResp) * ((1-ClockOffsetRatio)/2) ) * ?TU, 
     if
         (RespRXTimestamp >= PollTXTimestamp) and (RespTXTimestamp >= PollRXTimestamp) -> TimeOfFlight * ?C;
         true -> error

@@ -91,7 +91,6 @@ receive_data_jitter() ->
             io:format("Received data from ~w with seqnum ~w~n", [MacHeader#mac_header.src_addr, MacHeader#mac_header.seqnum]),
             % Simulates some delay in the network for every frame out of 4
             case rand:uniform(4) of
-                _ -> ok;
                 1 -> timer:sleep(200);
                 _ -> ok
             end,

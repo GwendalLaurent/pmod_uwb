@@ -27,7 +27,6 @@ ds_initiator() ->
     pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
     pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     pmod_uwb:set_frame_timeout(16#FFFF),
-    % ? Set preamble timeout too ?
     ds_initiator_loop(?NBR_MEASUREMENTS, {0,0,[],0}).
 
 ds_initiator_loop(0, {Succeeded, Errors, _Measures, Total}) ->
@@ -76,8 +75,6 @@ ds_responder() ->
     % Set the antenna delay -> !! the values should be calibrated
     pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
     pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
-    % ? Set preamble timeout too ?
-    % Disabling wait t.o. for Poll frame
     Measures = ds_responder_loop(?NBR_MEASUREMENTS, {0, 0, [], 0}),
     io:format("~w~n", [Measures]).
 

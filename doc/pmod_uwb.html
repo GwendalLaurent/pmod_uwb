@@ -1,0 +1,167 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>Module pmod_uwb</title>
+<link rel="stylesheet" type="text/css" href="stylesheet.css" title="EDoc">
+</head>
+<body bgcolor="white">
+<div class="navbar"><a name="#navbar_top"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<hr>
+
+<h1>Module pmod_uwb</h1>
+<ul class="index"><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>
+
+<p><b>Behaviours:</b> <a href="gen_server.html"><tt>gen_server</tt></a>.</p>
+
+<h2><a name="types">Data Types</a></h2>
+
+<h3 class="typedecl"><a name="type-regFileID">regFileID()</a></h3>
+<p><tt>regFileID() = atom()</tt></p>
+
+
+<h2><a name="index">Function Index</a></h2>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#clear_rx_flags-0">clear_rx_flags/0</a></td><td></td></tr>
+<tr><td valign="top"><a href="#get_received_data-0">get_received_data/0</a></td><td>Retrieves the data received on the UWB antenna.</td></tr>
+<tr><td valign="top"><a href="#read-1">read/1</a></td><td>read a register file.</td></tr>
+<tr><td valign="top"><a href="#reception-0">reception/0</a></td><td>Receive data using the pmod.</td></tr>
+<tr><td valign="top"><a href="#reception-1">reception/1</a></td><td>Receive data using the pmod.</td></tr>
+<tr><td valign="top"><a href="#set_frame_timeout-1">set_frame_timeout/1</a></td><td>Set the frame wait timeout and enables it.</td></tr>
+<tr><td valign="top"><a href="#softreset-0">softreset/0</a></td><td>Performs a reset of the IC following the procedure described in section 7.2.50.1.</td></tr>
+<tr><td valign="top"><a href="#transmit-1">transmit/1</a></td><td>Transmit data with the default options (i.e.</td></tr>
+<tr><td valign="top"><a href="#transmit-2">transmit/2</a></td><td>Performs a transmission with the specified options.</td></tr>
+<tr><td valign="top"><a href="#wait_for_transmission-0">wait_for_transmission/0</a></td><td></td></tr>
+<tr><td valign="top"><a href="#write-2">write/2</a></td><td>Write values in a register.</td></tr>
+<tr><td valign="top"><a href="#write_tx_data-1">write_tx_data/1</a></td><td>Writes the data in the TX_BUFFER register.</td></tr>
+</table>
+
+<h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="clear_rx_flags-0">clear_rx_flags/0</a></h3>
+<div class="spec">
+<p><tt>clear_rx_flags() -&gt; any()</tt></p>
+<p> </p>
+</div>
+
+<h3 class="function"><a name="get_received_data-0">get_received_data/0</a></h3>
+<div class="spec">
+<p><tt>get_received_data() -&gt; {integer(), bitstring()} | {error, any()}</tt><br></p>
+<p> </p>
+<p>returns: {DataLength, Data}</p>
+</div><p>Retrieves the data received on the UWB antenna</p>
+
+<h3 class="function"><a name="read-1">read/1</a></h3>
+<div class="spec">
+<p><tt>read(RegFileID::<a href="#type-regFileID">regFileID()</a>) -&gt; map() | {error, any()}</tt><br></p>
+<p> </p>
+</div><p><p>read a register file</p>
+ 
+  <h4><a name="Example">Example</a></h4>
+  To read the register file DEV_ID
+  <pre>  1&gt; pmod_uwb:read(dev_id).
+  #{model =&gt; 1,rev =&gt; 0,ridtag =&gt; "DECA",ver =&gt; 3}</pre></p>
+
+<h3 class="function"><a name="reception-0">reception/0</a></h3>
+<div class="spec">
+<p><tt>reception() -&gt; {integer(), bitstring()} | {error, any()}</tt><br></p>
+<p> </p>
+</div><p>Equivalent to <a href="#reception-1"><tt>reception(false)</tt></a>.</p>
+<p>Receive data using the pmod</p>
+
+<h3 class="function"><a name="reception-1">reception/1</a></h3>
+<div class="spec">
+<p><tt>reception(RXEnabled::boolean()) -&gt; {integer(), bitstring()} | {error, any()}</tt><br></p>
+<p> </p>
+</div><p><p>Receive data using the pmod</p>
+ 
+  <p>The function will hang until a frame is received on the board</p>
+ 
+  The CRC of the received frame <b>isn't</b> included in the returned value
+ </p>
+
+<h3 class="function"><a name="set_frame_timeout-1">set_frame_timeout/1</a></h3>
+<div class="spec">
+<p><tt>set_frame_timeout(Timeout::<a href="#type-miliseconds">miliseconds()</a>) -&gt; ok</tt><br></p>
+<p> </p>
+</div><p>Set the frame wait timeout and enables it</p>
+
+<h3 class="function"><a name="softreset-0">softreset/0</a></h3>
+<div class="spec">
+<p><tt>softreset() -&gt; any()</tt></p>
+<p> </p>
+</div><p>Performs a reset of the IC following the procedure described in section 7.2.50.1
+ </p>
+
+<h3 class="function"><a name="transmit-1">transmit/1</a></h3>
+<div class="spec">
+<p><tt>transmit(Data::bitstring()) -&gt; ok | {error, any()}</tt><br></p>
+<p> </p>
+</div><p><p>Transmit data with the default options (i.e. don't wait for resp, no delayn ...)</p>
+ 
+  <h4><a name="Examples">Examples</a></h4>
+  To transmit a frame:
+  <pre>  1&gt; pmod_uwb:transmit(&lt;Version:4, NextHop:8&gt;&gt;).
+  ok.</pre></p>
+
+<h3 class="function"><a name="transmit-2">transmit/2</a></h3>
+<div class="spec">
+<p><tt>transmit(Data, Options) -&gt; any()</tt></p>
+<p> </p>
+</div><p><p>Performs a transmission with the specified options</p>
+ 
+  <h4><a name="Options">Options</a></h4><p>  
+* wait4resp: It specifies that the reception must be enabled after the transmission in the expectation of a response  
+* w4r-tim: Specifies the turn around time in microseconds. That is the time the pmod will wait before enabling rx after a tx. Note that it won't be set if wit4resp is disabled  
+* txdlys: Specifies if the transmitter delayed sending should be set  
+* tx_delay: Specifies the delay of the transmission (see register DX_TIME)</p>
+ 
+  <h4><a name="Examples">Examples</a></h4>
+  To transmit a frame with default options:
+  <pre>  1&gt; pmod_uwb:transmit(&lt;Version:4, NextHop:8&gt;&gt;, #tx_opts{}).
+  ok.</pre></p>
+
+<h3 class="function"><a name="wait_for_transmission-0">wait_for_transmission/0</a></h3>
+<div class="spec">
+<p><tt>wait_for_transmission() -&gt; any()</tt></p>
+<p> </p>
+</div>
+
+<h3 class="function"><a name="write-2">write/2</a></h3>
+<div class="spec">
+<p><tt>write(RegFileID::<a href="#type-regFileID">regFileID()</a>, Value::map()) -&gt; ok | {error, any()}</tt><br></p>
+<p> </p>
+</div><p><p>Write values in a register</p>
+ 
+  <h4><a name="Examples">Examples</a></h4>
+  To write in a simple register file (i.e. a register without any sub-register):
+  <pre>  1&gt; pmod_uwb:write(eui, #{eui =&gt; 16#AAAAAABBBBBBBBBB}).
+  ok</pre>
+  To write in one sub-register of a register file:
+  <pre>  2&gt; pmod_uwb:write(panadr, #{pan_id =&gt; 16#AAAA}).
+  ok</pre><p>  
+The previous code will only change the values inside the sub-register PAN_ID</p>
+ 
+  To write in multiple sub-register of a register file in the same burst:
+  <pre>  3&gt; pmod_uwb:write(panadr, #{pan_id =&gt; 16#AAAA, short_addr =&gt; 16#BBBB}).
+  ok</pre>
+  Some sub-registers have their own fields. For example to set the value of the DIS_AM field in the sub-register AGC_CTRL1 of the register file AGC_CTRL:
+  <pre>  4&gt; pmod_uwb:write(agc_ctrl, #{agc_ctrl1 =&gt; #{dis_am =&gt; 2#0}}).</pre></p>
+
+<h3 class="function"><a name="write_tx_data-1">write_tx_data/1</a></h3>
+<div class="spec">
+<p><tt>write_tx_data(Value::binary()) -&gt; ok | {error, any()}</tt><br></p>
+<p> </p>
+</div><p><p>Writes the data in the TX_BUFFER register</p>
+ 
+  <p>Value is expected to be a <b>Binary</b>  
+That choice was made to make the transmission of frames easier later on</p>
+ 
+  <h4><a name="Examples">Examples</a></h4>
+  Send "Hello" in the buffer
+  <pre>  1&gt; pmod_uwb:write_tx_data(&lt;&lt;"Hello"&gt;&gt;).</pre></p>
+<hr>
+
+<div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
+<p><i>Generated by EDoc</i></p>
+</body>
+</html>
