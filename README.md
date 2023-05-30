@@ -26,18 +26,4 @@ Deploy the examples
 Before trying to deploy an example, you have to change the path of the SD card in the file `rebar.config` to match the path of your SD card. By default they are configured to be deployed on a SD card named *GRISP_SD* located at `/run/media/michel/`.
 When this is done, you have to run `rebar3 compile` to build the application, and `rebar3 grisp deploy` to deploy the app on your SD card.
 
-Additionally, each example contain an API function for the *sender* and a function for the *receiver*. Please refer to the following table to know which function to use for each example:
-
-# Functionalities
-
-## Read a register
-The function `pmod_uwb:read/1` let you read any register file described in the DW1000 user manual. It returns a map of all the subregisters present in the register
-
-# Known issues (not complete)
-
-* The DRX_CONF is supposed to have 44 bytes, however, the sum of all the registers reaches 45 bytes. The C code uses 44 bytes but the last sub-register *RXPACC_NOSAT* isn't present and thus the sum of all the registers in the code is 43 bytes. I choosed to stick with 44 bytes and use a place holder for the last byte.
-
-* Reading the register pmsc doesn't return the correct value for fineseq. 
-
-* Reading LDE_CTRL throws an error (can use LDE_IF instead for now)
-    $ rebar3 compile
+Each example contain an API function for the *sender* and a function for the *receiver*.
