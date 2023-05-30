@@ -3,7 +3,6 @@
 -include("mac_layer.hrl").
 
 -export([ds_initiator/0, ds_responder/0]).
--export([ss_initiator/1, ss_responder/1]).
 -export([ss_initiator/0, ss_responder/0]).
 
 %-define(TU, 1.565444993393822e-11). % 1 t.u. is ~1.5654e-11 s
@@ -15,44 +14,52 @@
 -define(HERTZ_TO_PPM_MUL, 1.0e-6/6489.6e6).
 
 -define(NBR_MEASUREMENTS, 250).
+-define(TX_ANTD, 16450).
+-define(RX_ANTD, 16450).
+
+-define(SS_TX_ANTD, 23500).
+-define(SS_RX_ANTD, 23500).
 
 %--- Double-sided two-way ranging -------------------------------------------------------------------
 ds_initiator() ->
     % Set the antenna delay -> !! the values should be calibrated
-    TX_ANTD = 16350, pmod_uwb:write(tx_antd, #{tx_antd => TX_ANTD}),
-    RX_ANTD = 16435, pmod_uwb:write(lde_if, #{lde_rxantd => RX_ANTD}),
+    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
+    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     pmod_uwb:set_frame_timeout(16#FFFF),
-    % ? Set preamble timeout too ?
-    ds_initiator_loop(?NBR_MEASUREMENTS, TX_ANTD, {0,0,[],0}).
+    ds_initiator_loop(?NBR_MEASUREMENTS, {0,0,[],0}).
 
-ds_initiator_loop(0, _, {Succeeded, Errors, _Measures, Total}) ->
+ds_initiator_loop(0, {Succeeded, Errors, _Measures, Total}) ->
     SuccessRate = Succeeded / Total,
     ErrorRate = Errors / Total,
     io:format("-------------------------------- Summary --------------------------------~n"),
     io:format("Sent ~w request - ratio: ~w/~w - Success rate: ~w - Error rate: ~w~n",[Total, Succeeded, Total, SuccessRate, ErrorRate]),
     io:format("-------------------------------------------------------------------------~n");
-ds_initiator_loop(Left, TX_ANTD, {Succeeded, Errors, Measures, Total}) ->
-    case ds_initiator_protocol(TX_ANTD) of
-        ok -> ds_initiator_loop(Left - 1, TX_ANTD, {Succeeded+1, Errors, Measures, Total+1});
-        error -> ds_initiator_loop(Left, TX_ANTD, {Succeeded, Errors+1, Measures, Total+1}) % No response to Poll message -> try again
+ds_initiator_loop(Left, {Succeeded, Errors, Measures, Total}) ->
+    case ds_initiator_protocol() of
+        ok -> ds_initiator_loop(Left - 1, {Succeeded+1, Errors, Measures, Total+1});
+        error -> ds_initiator_loop(Left-1, {Succeeded, Errors+1, Measures, Total+1}) % No response to Poll message -> try again
     end.
 
-ds_initiator_protocol(TX_ANTD) ->
-    % Sending the first frame
+ds_initiator_protocol() ->
+    % Sending the poll message
     FrameControl = #frame_control{pan_id_compr = ?ENABLED},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_addr = <<16#FFFF:16>>},
     % enabling wait4resp to avoid an early timeout. Here we know that resp will take at least 10000 µs
     mac_layer:mac_send_data(FrameControl, MacHeader, <<"DS_INIT">>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000}),
     io:format("Poll message is sent~n"),
+
+    % Receiving the resp message
     case  mac_layer:mac_receive(true) of
         {_, _, <<"Resp_TX">>} -> #{tx_stamp := PollTXTimestamp} = pmod_uwb:read(tx_time),
-                         #{rx_stamp := RespRXTimestamp} = pmod_uwb:read(rx_time),
+                         #{rx_stamp := RespRXTimestamp} = pmod_uwb:read(rx_time), % Getting the reception timestamp of the resp message
+
+                         % Setting up the final message
                          FinalTXTime = RespRXTimestamp + (30000 * ?UUS_TO_DWT_TIME),
                          pmod_uwb:write(dx_time, #{dx_time => FinalTXTime}),
-                         FinalTXTimestamp = FinalTXTime + TX_ANTD,
+                         FinalTXTimestamp = FinalTXTime + ?TX_ANTD,
                          Message = <<PollTXTimestamp:40, RespRXTimestamp:40, FinalTXTimestamp:40>>,
-                         % For now, same MAC header but seqnum should increase
                          pmod_uwb:write(sys_status, #{txfcg => 2#1}),
+                         % Sending the final message
                          mac_layer:mac_send_data(FrameControl, MacHeader, Message, #tx_opts{txdlys = ?ENABLED, tx_delay = FinalTXTime}),
                          io:format("Final message sent~n"),
                          io:format("PollTX: ~w - RespRX ~w - FinalTX ~w~n", [PollTXTimestamp, RespRXTimestamp, FinalTXTimestamp]),
@@ -65,14 +72,12 @@ ds_initiator_protocol(TX_ANTD) ->
 
 ds_responder() ->
     % Set the antenna delay -> !! the values should be calibrated
-    TX_ANTD = 16436, pmod_uwb:write(tx_antd, #{tx_antd => TX_ANTD}),
-    RX_ANTD = 16435, pmod_uwb:write(lde_if, #{lde_rxantd => RX_ANTD}),
-    % ? Set preamble timeout too ?
-    % Disabling wait t.o. for Poll frame
-    Measures = ds_responder_loop(?NBR_MEASUREMENTS, TX_ANTD, {0, 0, [], 0}),
+    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
+    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
+    Measures = ds_responder_loop(?NBR_MEASUREMENTS, {0, 0, [], 0}),
     io:format("~w~n", [Measures]).
 
-ds_responder_loop(0, _, {Succeeded, Errors, Measures, Total}) ->
+ds_responder_loop(0, {Succeeded, Errors, Measures, Total}) ->
     SuccessRate = Succeeded/Total,
     ErrorRate = Errors/Total,
     MeasureAVG = lists:sum(Measures)/Succeeded,
@@ -83,29 +88,34 @@ ds_responder_loop(0, _, {Succeeded, Errors, Measures, Total}) ->
     io:format("Min: ~w - Max ~w~n", [lists:min(Measures), lists:max(Measures)]),
     io:format("-------------------------------------------------------------------------~n"),
     Measures;
-ds_responder_loop(N, TX_ANTD, {Succeeded, Errors, Measures, Total}) ->
+ds_responder_loop(N, {Succeeded, Errors, Measures, Total}) ->
     pmod_uwb:write(sys_cfg, #{rxwtoe  => 2#0}),
-    case ds_responder_protocol(TX_ANTD) of
-        error_rx_poll -> ds_responder_loop(N, TX_ANTD, {Succeeded, Errors+1, Measures, Total+1});
-        error -> ds_responder_loop(N-1, TX_ANTD, {Succeeded, Errors+1, Measures, Total+1});
-        Distance -> ds_responder_loop(N-1, TX_ANTD, {Succeeded+1, Errors, [Distance | Measures], Total+1})
+    case ds_responder_protocol() of
+        error_rx_poll -> ds_responder_loop(N-1, {Succeeded, Errors+1, Measures, Total+1});
+        error -> ds_responder_loop(N-1, {Succeeded, Errors+1, Measures, Total+1});
+        Distance -> ds_responder_loop(N-1, {Succeeded+1, Errors, [Distance | Measures], Total+1})
     end.
 
-ds_responder_protocol(_TX_ANTD) ->
+ds_responder_protocol() ->
+    % Receiving poll message
     case mac_layer:mac_receive() of
         {FrameControl, MacHeader, <<"DS_INIT">>} -> 
             io:format("Poll message received~n"),
-            pmod_uwb:set_frame_timeout(16#FFFF), % TODO set back again later
-            #{rx_stamp := PollRXTimestamp} = pmod_uwb:read(rx_time),
-            RespTXTime = PollRXTimestamp + (20000 * ?UUS_TO_DWT_TIME),
+            pmod_uwb:set_frame_timeout(16#FFFF), 
+            #{rx_stamp := PollRXTimestamp} = pmod_uwb:read(rx_time), % Getting the the reception timestamp of the poll message
+
+            % Setting up and sending the resp message
+            RespTXTime = PollRXTimestamp + (30000 * ?UUS_TO_DWT_TIME),
             pmod_uwb:write(dx_time, #{dx_time => RespTXTime}),
             RespMacHeader = #mac_header{src_addr = <<16#FFFF:16>>, dest_pan = MacHeader#mac_header.src_pan, dest_addr = MacHeader#mac_header.src_addr, seqnum = MacHeader#mac_header.seqnum},
             mac_layer:mac_send_data(FrameControl, RespMacHeader, <<"Resp_TX">>, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000}),
             io:format("Response message sent~n"),
+
+            % Receiving the final message
             case mac_layer:mac_receive(true)of
                 {_, _, <<PollTXTimestamp:40, RespRXTimestamp:40, FinalTXTimestamp:40>>} ->
-                    #{tx_stamp := RespTXTimestamp} = pmod_uwb:read(tx_time),
-                    #{rx_stamp := FinalRXTimestamp} = pmod_uwb:read(rx_time),
+                    #{tx_stamp := RespTXTimestamp} = pmod_uwb:read(tx_time), % Getting the tx timestamp of the resp message
+                    #{rx_stamp := FinalRXTimestamp} = pmod_uwb:read(rx_time), % Getting the rx timestamp of the final message
 
                     TRound1 = RespRXTimestamp - PollTXTimestamp,
                     TRound2 = FinalRXTimestamp - RespTXTimestamp,
@@ -116,6 +126,7 @@ ds_responder_protocol(_TX_ANTD) ->
                     io:format("TProp: ~w~n", [TProp]),
                     TOF = TProp * ?TU,
                     Distance = TOF * ?C,
+
                     io:format("PollRX: ~w - RespTX ~w - FinalRX ~w~n", [PollRXTimestamp, RespTXTimestamp, FinalRXTimestamp]),
                     io:format("TRound1: ~w - TRound2 ~w - TReply1 ~w - TReply2 ~w ~n", [TRound1, TRound2, TReply1, TReply2]),
                     io:format("Computed distance: ~w~n", [Distance]),
@@ -130,65 +141,89 @@ ds_responder_protocol(_TX_ANTD) ->
                error_rx_poll
     end.
 
-
 %--- Single-sided two-way ranging -------------------------------------------------------------------
 
-ss_initiator(0) -> ok;
-ss_initiator(N) ->
-    io:format("~w~n", [ss_initiator()]),
-    timer:sleep(100),
-    ss_initiator(N-1).
-
 ss_initiator() ->
-    % Setup 
-    pmod_uwb:write(tx_antd, #{tx_antd => 16436}), % ! this value is not correct - the devices should be calibrated
-    pmod_uwb:write(lde_if, #{lde_rxantd => 16436}),
-    % TODO: can save energy by setting W4R_TIME (delay RX activation)
+    pmod_uwb:write(tx_antd, #{tx_antd => ?SS_TX_ANTD}), % ! this value is not correct - the devices should be calibrated
+    pmod_uwb:write(lde_if, #{lde_rxantd => ?SS_RX_ANTD}),
+    ss_initiator(?NBR_MEASUREMENTS, []).
 
-    % 2-way ranging
+ss_initiator(0, Measurements) -> 
+    Total = length(Measurements),
+    MeasureAVG = lists:sum(Measurements)/Total,
+    StdDev = std_dev(Measurements, MeasureAVG, Total, 0),
+    io:format("-------------------------------- Summary --------------------------------~n"),
+    io:format("Sent ~w request -~n",[Total]),
+    io:format("Average distance measured: ~w - standard deviation: ~w ~n", [MeasureAVG, StdDev]),
+    io:format("Min: ~w - Max ~w~n", [lists:min(Measurements), lists:max(Measurements)]),
+    io:format("-------------------------------------------------------------------------~n"),
+    Measurements;
+ss_initiator(N, Measurements) ->
+    Measure = ss_initiator_loop(),
+    io:format("~w~n", [Measure]),
+    timer:sleep(100),
+    case Measure of 
+        error -> ss_initiator(N-1, Measurements);
+        _ -> ss_initiator(N-1, [Measure | Measurements])
+    end.
+
+ss_initiator_loop() ->
+    % Builds the MAC frame for Poll message
     FrameControl = #frame_control{pan_id_compr = ?ENABLED, dest_addr_mode = ?SHORT_ADDR, src_addr_mode = ?SHORT_ADDR},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#FFFF:16>>, dest_addr = <<16#FFFF:16>>, src_addr = <<16#FFFF:16>>},
-    MacMessage = mac_layer:mac_message(FrameControl, MacHeader, <<"Wave">>),
     Options = #tx_opts{wait4resp = ?ENABLED, w4r_tim = 0},
-    mac_layer:mac_send_data(FrameControl, MacHeader, MacMessage, Options),
-    {_, _, Data} = mac_layer:mac_receive(true),
-    io:format("Received data: ~w~n", [Data]),
+
+    mac_layer:mac_send_data(FrameControl, MacHeader, <<"GRiSP">>, Options),
+
+    {_, _, Data} = mac_layer:mac_receive(true), % Reception of Resp
+    %io:format("Received data: ~w~n", [Data]),
+
+    % Getting the timestamps of the TX of Poll and of the RX of Resp
     #{tx_stamp := PollTXTimestamp} = pmod_uwb:read(tx_time),
     #{rx_stamp := RespRXTimestamp} = pmod_uwb:read(rx_time),
-    {PollRXTimestamp, RespTXTimestamp} = get_resp_ts(Data),
-    io:format("PollTX: ~w - PollRX: ~w - RespTX: ~w - RespRX: ~w~n", [PollTXTimestamp, PollRXTimestamp, RespTXTimestamp, RespRXTimestamp]),
-    Rtd_init = RespRXTimestamp - PollTXTimestamp,
-    Rtd_resp = RespTXTimestamp - PollRXTimestamp,
+
+    {PollRXTimestamp, RespTXTimestamp} = get_resp_ts(Data), % Getting the timestamps sent by the responder
+    % io:format("PollTX: ~w - PollRX: ~w - RespTX: ~w - RespRX: ~w~n", [PollTXTimestamp, PollRXTimestamp, RespTXTimestamp, RespRXTimestamp]),
+
+    TRound = RespRXTimestamp - PollTXTimestamp,
+    TResp = RespTXTimestamp - PollRXTimestamp,
+
+    % Getting the clock offset ratio
     #{drx_car_int := DRX_CAR_INT} = pmod_uwb:read(drx_conf),
     ClockOffsetRatio = (DRX_CAR_INT * ?FREQ_OFFSET_MULTIPLIER *  ?HERTZ_TO_PPM_MUL),
-    TimeOfFlight = ( (Rtd_init - Rtd_resp) * ((1-ClockOffsetRatio)/2) ) * ?TU, % TODO include the antenna delay
-    TimeOfFlight * ?C.
+    
+    io:format("PollTX ~w - RespRX ~w - PollRX ~w - RespTX ~w~n", [PollTXTimestamp, RespRXTimestamp, PollRXTimestamp, RespTXTimestamp]),
+    TimeOfFlight = ( (TRound - TResp) * ((1-ClockOffsetRatio)/2) ) * ?TU, 
+    if
+        (RespRXTimestamp >= PollTXTimestamp) and (RespTXTimestamp >= PollRXTimestamp) -> TimeOfFlight * ?C;
+        true -> error
+    end.
 
 get_resp_ts(Data) ->
-    <<PollRXTimestamp:40, RespTXTimestamp:32, _:8>> = Data,
+    <<PollRXTimestamp:40, RespTXTimestamp:40>> = Data,
     {PollRXTimestamp, RespTXTimestamp}.
 
-ss_responder(0) -> ok;
-ss_responder(N) ->
-    TX_ANTD = 16436,
-    pmod_uwb:write(tx_antd, #{tx_antd => TX_ANTD}), % ! this value is not correct - the devices should be calibrated
-    pmod_uwb:write(lde_if, #{lde_rxantd => 16436}),
+ss_responder() ->
+    pmod_uwb:write(tx_antd, #{tx_antd => ?SS_TX_ANTD}), 
+    pmod_uwb:write(lde_if, #{lde_rxantd => ?SS_RX_ANTD}),
     #{pan_id := PANID, short_addr := Addr} = pmod_uwb:read(panadr),
+    ss_responder_loop(?NBR_MEASUREMENTS, PANID, Addr).
+
+ss_responder_loop(0, _, _) -> ok;
+ss_responder_loop(N, PANID, Addr) ->
     {FrameControl, MacHeader, _} = mac_layer:mac_receive(),
     #{rx_stamp := PollRXTimestamp} = pmod_uwb:read(rx_time),
-    RespTXTimestamp_ = PollRXTimestamp + (10000 * ?UUS_TO_DWT_TIME), % TODO bitshift ??
+
+    RespTXTimestamp_ = PollRXTimestamp + (20000 * ?UUS_TO_DWT_TIME), 
     pmod_uwb:write(dx_time, #{dx_time => RespTXTimestamp_}),
-    RespTXTimestamp = RespTXTimestamp_ + TX_ANTD,
-    TXData = <<PollRXTimestamp:40, RespTXTimestamp:40>>, % ! Antenna delay not included right now
+
+    RespTXTimestamp = RespTXTimestamp_ + ?SS_TX_ANTD,
+    TXData = <<PollRXTimestamp:40, RespTXTimestamp:40>>, 
     TXMacHeader = #mac_header{seqnum = MacHeader#mac_header.seqnum+1, dest_pan = MacHeader#mac_header.src_pan, dest_addr = MacHeader#mac_header.src_addr, src_pan = <<PANID:16>>, src_addr = <<Addr:16>>},
     Options = #tx_opts{txdlys = ?ENABLED, tx_delay = RespTXTimestamp},
+
     mac_layer:mac_send_data(FrameControl, TXMacHeader, TXData, Options),
-    ss_responder(N-1).
-
-ss_responder() ->
-    ss_responder(1).
-
-
+    ss_responder_loop(N-1, PANID, Addr).
 
 %--- Tool functions for stats -------------------------------------------------------------------
 

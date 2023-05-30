@@ -6,11 +6,8 @@
 -export([mac_decode/1]).
 -export([mac_frame/2, mac_frame/3]).
 
-% Not used for now, might use it later for more clarity
-% -type decoded_mac() :: {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 
 %--- API -----------------------------------------------------------------------
-
 
 %-------------------------------------------------------------------------------
 % @doc builds a mac frame without a payload
@@ -49,7 +46,6 @@ mac_send_data(FrameControl, MacHeader, Payload) ->
 -spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_send_data(FrameControl, MacHeader, Payload, Options) ->
     Message = mac_frame(FrameControl, MacHeader, Payload),
-    io:format("Frame size w/o CRC: ~w~n", [byte_size(Message)]),
     pmod_uwb:transmit(Message, Options).
 
 %-------------------------------------------------------------------------------
@@ -71,7 +67,6 @@ mac_receive() ->
 %-------------------------------------------------------------------------------
 -spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 mac_receive(RXEnab) ->
-    io:format("Waiting for reception~n"),
     case pmod_uwb:reception(RXEnab) of
         {_Length, Data} -> mac_decode(Data);
         Err -> Err
@@ -116,8 +111,6 @@ build_mac_header(FrameControl, MacHeader) ->
 mac_decode(Data) ->
     <<FC:16/bitstring, Seqnum:8, Rest/bitstring>> = Data,
     FrameControl = decode_frame_control(FC),
-    % TODO: Decode the pan/addrs + the payload 
-    % MacHeader = #mac_header{seqnum = Seqnum},
     decode_rest(FrameControl, Seqnum, Rest).
 
 %-------------------------------------------------------------------------------
@@ -194,7 +187,6 @@ decode_addrs(src_addr, Rest, FrameControl) ->
 build_frame_control(FrameControl) ->
     #frame_control{pan_id_compr=PanIdCompr,ack_req=AckReq,frame_pending=FramePending,sec_en=SecEn,
                    frame_type=FrameType,src_addr_mode=SrcAddrMode,frame_version=FrameVersion,dest_addr_mode=DestAddrMode} = FrameControl,
-    % <<16#6188:16>>.
     <<2#0:1, PanIdCompr:1, AckReq:1, FramePending:1, SecEn:1, FrameType:3, SrcAddrMode:2, FrameVersion:2, DestAddrMode:2, 2#0:2>>.
 
 

@@ -210,7 +210,7 @@ reception(RXEnabled) ->
 
 %% @private
 enable_rx() ->
-    io:format("Enabling reception~n"),
+    % io:format("Enabling reception~n"),
     clear_rx_flags(),
     call({write, sys_ctrl, #{rxenab => 2#1}}).
 
@@ -498,7 +498,6 @@ read_rx_data(Bus, Length) ->
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length}]),
     Resp.
 
-% TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
 %% ---------------------------------------------------------------------------------------
 %% @doc used to write the values in the map given in the Value argument
@@ -523,7 +522,6 @@ write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
 write_reg(Bus, RegFileID, Value) ->
     Header = header(write, RegFileID),
     CurrVal = read_reg(Bus, RegFileID),
-    % TODO: Check that a field isn't a read only sub-register, maybe use filter to check them
     ValuesToWrite = maps:merge_with(fun(_Key, _Value1, Value2) -> Value2 end, CurrVal, Value),
     Body = reg(encode, RegFileID, ValuesToWrite),
     % debug_write(RegFileID, Body),
@@ -1116,7 +1114,6 @@ reg(decode, drx_conf, Resp) ->
         drx_pretoc => DRX_PRETOC %,
         % rxpacc_nosat => RXPACC_NOSAT
     };
-% ? Potential bug ? sub-register has the same name as register file...
 reg(encode, rf_conf, Val) ->
     #{
         txrxsw := TXRXSW, ldofen := LDOFEN, pllfen := PLLFEN, txfen := TXFEN
@@ -1244,7 +1241,7 @@ reg(decode, fs_ctrl, Resp) ->
     >> = reverse(Resp),
     #{
         fs_xtalt => #{res => Reserved, xtalt => XTALT},
-        fs_plltune => FS_PLLTUNE, % ! FIXME: read value isn't correct
+        fs_plltune => FS_PLLTUNE, 
         fs_pllcfg => FS_PLLCFG
     };
 reg(encode, aon_wcfg, Val) ->
@@ -1375,8 +1372,6 @@ reg(decode, otp_if, Resp) ->
         otp_addr => #{otpaddr => OTP_ADDR, res => Reserved0},
         otp_wdat => OTP_WDAT
     };
-% TODO: decode lde_if (a bit special with lots of offsets) + mnemonic not consistent within the user manual
-% reg(decode, lde_if, Resp) -> 
 reg(decode, lde_thresh, Resp) ->
     <<
       LDE_THRESH:16
@@ -1787,7 +1782,7 @@ subRegSize(pmsc_ctrl1) -> 4;
 subRegSize(pmsc_snozt) -> 1;
 subRegSize(pmsc_txfseq) -> 2;
 subRegSize(pmsc_ledc) -> 4;
-subRegSize(_) -> error({error}). % TODO: remove or make a better error
+subRegSize(_) -> error({error}).
 
 %--- Debug ---------------------------------------------------------------------
 
