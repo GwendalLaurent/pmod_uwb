@@ -1,4 +1,5 @@
 _build
 rebar.lock
-*.config
+# *.config
 doc/
+erlang_ls.config
