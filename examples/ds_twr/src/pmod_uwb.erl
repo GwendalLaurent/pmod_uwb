@@ -498,7 +498,6 @@ read_rx_data(Bus, Length) ->
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length}]),
     Resp.
 
-% TODO: have a function that encodes the fields (e.g. be able to pass 'enable' as value and have automatic translation)
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
 %% ---------------------------------------------------------------------------------------
 %% @doc used to write the values in the map given in the Value argument
@@ -523,7 +522,6 @@ write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
 write_reg(Bus, RegFileID, Value) ->
     Header = header(write, RegFileID),
     CurrVal = read_reg(Bus, RegFileID),
-    % TODO: Check that a field isn't a read only sub-register, maybe use filter to check them
     ValuesToWrite = maps:merge_with(fun(_Key, _Value1, Value2) -> Value2 end, CurrVal, Value),
     Body = reg(encode, RegFileID, ValuesToWrite),
     % debug_write(RegFileID, Body),
@@ -1116,7 +1114,6 @@ reg(decode, drx_conf, Resp) ->
         drx_pretoc => DRX_PRETOC %,
         % rxpacc_nosat => RXPACC_NOSAT
     };
-% ? Potential bug ? sub-register has the same name as register file...
 reg(encode, rf_conf, Val) ->
     #{
         txrxsw := TXRXSW, ldofen := LDOFEN, pllfen := PLLFEN, txfen := TXFEN
@@ -1244,7 +1241,7 @@ reg(decode, fs_ctrl, Resp) ->
     >> = reverse(Resp),
     #{
         fs_xtalt => #{res => Reserved, xtalt => XTALT},
-        fs_plltune => FS_PLLTUNE, % ! FIXME: read value isn't correct
+        fs_plltune => FS_PLLTUNE, 
         fs_pllcfg => FS_PLLCFG
     };
 reg(encode, aon_wcfg, Val) ->
@@ -1375,8 +1372,6 @@ reg(decode, otp_if, Resp) ->
         otp_addr => #{otpaddr => OTP_ADDR, res => Reserved0},
         otp_wdat => OTP_WDAT
     };
-% TODO: decode lde_if (a bit special with lots of offsets) + mnemonic not consistent within the user manual
-% reg(decode, lde_if, Resp) -> 
 reg(decode, lde_thresh, Resp) ->
     <<
       LDE_THRESH:16
@@ -1544,7 +1539,7 @@ reg(decode, pmsc, Resp) ->
     <<
         Res31:12, BLNKNOW:4, Res15:7, BLNKEN:1, BLINK_TIM:8, % PMSC_LEDC
         TXFINESEQ:16, % PMSC_TXFINESEQ
-        _:(22*8), % Reserved 2
+        _:(25*8), % Reserved 2
         SNOZ_TIM:8, % PMSC_SNOZT
         _:32, % Reserved 1
         KHZCLKDIV:6, _:8, LDERUNE:1, _:1, PLLSYN:1, SNOZR:1, SNOZE:1, ARXSLP:1, ATXSLP:1, PKTSEQ:8, _:1, ARX2INIT:1, _:1, % PMSC_CTRL1
@@ -1723,7 +1718,7 @@ regSize(otp_if) -> 19; % user manual gives 18 bytes in regs table but sum of all
 regSize(lde_ctrl) -> undefined; % No size ?
 regSize(lde_if) -> undefined; % No size ?
 regSize(dig_diag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
-regSize(pmsc) -> 41. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
+regSize(pmsc) -> 44. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
 
 %% Gives the size in bytes
 subRegSize(agc_ctrl1) -> 2;
@@ -1787,7 +1782,7 @@ subRegSize(pmsc_ctrl1) -> 4;
 subRegSize(pmsc_snozt) -> 1;
 subRegSize(pmsc_txfseq) -> 2;
 subRegSize(pmsc_ledc) -> 4;
-subRegSize(_) -> error({error}). % TODO: remove or make a better error
+subRegSize(_) -> error({error}).
 
 %--- Debug ---------------------------------------------------------------------
 

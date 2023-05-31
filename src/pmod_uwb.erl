@@ -1539,7 +1539,7 @@ reg(decode, pmsc, Resp) ->
     <<
         Res31:12, BLNKNOW:4, Res15:7, BLNKEN:1, BLINK_TIM:8, % PMSC_LEDC
         TXFINESEQ:16, % PMSC_TXFINESEQ
-        _:(22*8), % Reserved 2
+        _:(25*8), % Reserved 2
         SNOZ_TIM:8, % PMSC_SNOZT
         _:32, % Reserved 1
         KHZCLKDIV:6, _:8, LDERUNE:1, _:1, PLLSYN:1, SNOZR:1, SNOZE:1, ARXSLP:1, ATXSLP:1, PKTSEQ:8, _:1, ARX2INIT:1, _:1, % PMSC_CTRL1
@@ -1718,7 +1718,7 @@ regSize(otp_if) -> 19; % user manual gives 18 bytes in regs table but sum of all
 regSize(lde_ctrl) -> undefined; % No size ?
 regSize(lde_if) -> undefined; % No size ?
 regSize(dig_diag) -> 38; % user manual gives 41 bytes but sum of all sub regs gives 38 bytes
-regSize(pmsc) -> 41. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
+regSize(pmsc) -> 44. % user manual gives 48 bytes but sum of all sub regs gives 41 bytes
 
 %% Gives the size in bytes
 subRegSize(agc_ctrl1) -> 2;
