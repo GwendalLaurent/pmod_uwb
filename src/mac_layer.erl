@@ -3,8 +3,6 @@
 
 -include("mac_layer.hrl").
 
--include_lib("eunit/include/eunit.hrl").
-
 -define(NAME, mac_layer).
 
 % Callbacks
@@ -19,8 +17,8 @@
 -export([mac_frame/2, mac_frame/3]).
 
 % Params = {MacParams, MacState}
+-spec start_link(Params::{map(), tuple()}) -> {ok, pid()}.
 start_link(Params) ->
-    ?debugMsg("Starting link mac layer"),
     gen_server:start_link({local, ?NAME}, ?MODULE, Params, []).
 
 stop_link() ->
@@ -30,12 +28,7 @@ stop_link() ->
 
 % ? Link the gen_server to a supervisor ?
 init({Params, _State}) ->
-    ?debugMsg("Creating MAC layer"),
-    #{phy := PHY} = Params,
-    case PHY of
-        pmod_uwb -> grisp:add_device(spi2, pmod_uwb);
-        _ -> ok
-    end,
+    #{phy_layer := PHY} = Params,
     {ok, #{phy => PHY}}. % The state still has to be defined later
 
 handle_call({send_data, Message, Options}, _From, #{phy := PHY} = State) -> {reply, PHY:transmit(Message, Options), State};
@@ -104,7 +97,7 @@ reception() ->
 %-------------------------------------------------------------------------------
 -spec reception(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
 reception(RXEnab) -> 
-    case gen_server:call(?NAME, {reception, RXEnab}) of
+    case gen_server:call(?NAME, {reception, RXEnab}, infinity) of
         {_Length, Data} -> mac_decode(Data);
         Err -> Err
     end.

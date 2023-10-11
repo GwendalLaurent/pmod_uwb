@@ -3,6 +3,7 @@
 
 -export([start_link/2]).
 -export([transmit/2]).
+-export([reception/1]).
 
 %%% gen_server callbacks
 -export([init/1]).
@@ -19,12 +20,16 @@ start_link(_Connector, _Opts) ->
 transmit(Data, Options) ->
     gen_server:call(?NAME, {transmit, Data, Options}).
 
+reception(_) ->
+    gen_server:call(?NAME, {reception}).
+
 %%% gen_server callbacks
 init(_) ->
     io:format("Mock phy created~n"),
     {ok, #{}}.
 
 handle_call({transmit, Data, Options}, _From, State) -> {reply, tx(Data, Options), State};
+handle_call({reception}, _From, State) -> {reply, rx(), State};
 handle_call(_Request, _From, _State) -> error(not_implemented).
 
 handle_cast(_Request, _State) ->
@@ -35,3 +40,6 @@ handle_cast(_Request, _State) ->
 tx(Data, Options) ->
     % TODO
     ok.
+
+rx() ->
+    {14, <<16#6188:16, 0:8, 16#CADE:16, "XR", "XT", "Hello">>}.

@@ -1,7 +1,5 @@
 -module(network_sup).
 
--include_lib("eunit/include/eunit.hrl").
-
 -behaviour(supervisor).
 
 -export([start_link/0]).
@@ -16,9 +14,7 @@
 start_link() -> supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 start_child(ChildID, Module, Params) -> 
-    ?debugMsg("Creating child"),
     {ok, Pid} = supervisor:start_child(?MODULE, #{id => ChildID, start => {Module, start_link, Params}}),
-    ?debugMsg("Child created"),
     Pid.
 
 terminate_child(ChildID) ->

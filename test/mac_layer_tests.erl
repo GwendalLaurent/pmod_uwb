@@ -7,7 +7,7 @@
 %--- Setup ---------------------------------------------------------------------
 setup() ->
     {ok, NetworkSup} = network_sup:start_link(),
-    network_sup:start_child(mac_layer, mac_layer, [{#{phy => mock_phy}, #{}}]),
+    network_sup:start_child(mac_layer, mac_layer, [{#{phy_layer => mock_phy}, #{}}]),
     NetworkSup.
 
 teardown(NetworkSup) ->

@@ -7,13 +7,11 @@
 %--- Setup ---------------------------------------------------------------------
 setup() ->
     {ok, NetworkSup} = network_sup:start_link(),
-    ?debugMsg("Creating the network stack"),
     % TODO Use a mock mac layer
-    ieee802154:create_stack(#{mac_layer => #{module => mac_layer, state => {}, parameters => #{phy => mock_phy}}}),
+    ieee802154:create_stack(#{}, {mac_layer, {}, #{}}, {mock_phy, {}, #{}}),
     NetworkSup.
 
 teardown(NetworkSup) ->
-    ?debugFmt("~w~n", [NetworkSup]),
     network_sup:terminate_child(ieee802154), % TODO create a kill stack function
     network_sup:delete_child(ieee802154),
     exit(NetworkSup, normal),
@@ -37,4 +35,6 @@ mac_test_() ->
 %--- Tests ---------------------------------------------------------------------
 
 reception_() ->
-    ?assertEqual(rx_content, ieee802154:reception()).
+    FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
+    MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
+    ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, ieee802154:reception()).
