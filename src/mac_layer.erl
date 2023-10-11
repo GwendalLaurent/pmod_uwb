@@ -1,11 +1,48 @@
 -module(mac_layer).
+-behaviour(gen_server).
 
 -include("mac_layer.hrl").
 
--export([mac_send_data/3, mac_send_data/4, mac_receive/0, mac_receive/1]).
+-include_lib("eunit/include/eunit.hrl").
+
+-define(NAME, mac_layer).
+
+% Callbacks
+-export([start_link/1]).
+-export([stop_link/0]).
+-export([init/1]).
+-export([handle_call/3]).
+-export([handle_cast/2]).
+
+-export([send_data/3, send_data/4, reception/0, reception/1]).
 -export([mac_decode/1]).
 -export([mac_frame/2, mac_frame/3]).
 
+% Params = {MacParams, MacState}
+start_link(Params) ->
+    ?debugMsg("Starting link mac layer"),
+    gen_server:start_link({local, ?NAME}, ?MODULE, Params, []).
+
+stop_link() ->
+    gen_server:stop(?NAME).
+
+%--- gen_server callback functions ---------------------------------------------
+
+% ? Link the gen_server to a supervisor ?
+init({Params, _State}) ->
+    ?debugMsg("Creating MAC layer"),
+    #{phy := PHY} = Params,
+    case PHY of
+        pmod_uwb -> grisp:add_device(spi2, pmod_uwb);
+        _ -> ok
+    end,
+    {ok, #{phy => PHY}}. % The state still has to be defined later
+
+handle_call({send_data, Message, Options}, _From, #{phy := PHY} = State) -> {reply, PHY:transmit(Message, Options), State};
+handle_call({reception, RXEnab}, _From, #{phy := PHY} = State) -> {reply, PHY:reception(RXEnab), State};
+handle_call(Request, _From, _State) -> error({unknown_call, Request}).
+
+handle_cast(Request, _State) -> error({unknown_cast, Request}).
 
 %--- API -----------------------------------------------------------------------
 
@@ -33,9 +70,9 @@ mac_frame(FrameControl, MacHeader, Payload) ->
 % The 2 bytes CRC are automatically added at the end of the payload and
 % must not be included in the Payload given in the arguments
 %-------------------------------------------------------------------------------
--spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
-mac_send_data(FrameControl, MacHeader, Payload) ->
-    mac_send_data(FrameControl, MacHeader, Payload, #tx_opts{}).
+-spec send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
+send_data(FrameControl, MacHeader, Payload) ->
+    send_data(FrameControl, MacHeader, Payload, #tx_opts{}).
 
 %-------------------------------------------------------------------------------
 % @doc Sends a MAC frame using the pmod_uwb using the specified options 
@@ -43,21 +80,21 @@ mac_send_data(FrameControl, MacHeader, Payload) ->
 % must not be included in the Payload given in the arguments
 % @end
 %-------------------------------------------------------------------------------
--spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-mac_send_data(FrameControl, MacHeader, Payload, Options) ->
+-spec send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
+send_data(FrameControl, MacHeader, Payload, Options) ->
     Message = mac_frame(FrameControl, MacHeader, Payload),
-    pmod_uwb:transmit(Message, Options).
+    gen_server:call(?NAME, {send_data, Message, Options}).
 
 %-------------------------------------------------------------------------------
 % @doc Receive a frame using the pmod_uwb and decode the frame 
 %
-% @equiv mac_receive(false)
+% @equiv reception(false)
 %
 % @return the received mac frame decoded
 %-------------------------------------------------------------------------------
--spec mac_receive() -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-mac_receive() ->
-    mac_receive(false).
+-spec reception() -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
+reception() ->
+    reception(false).
 
 %-------------------------------------------------------------------------------
 % @doc Receive a frame using the pmod_uwb and decode the frame 
@@ -65,13 +102,13 @@ mac_receive() ->
 % <b>Warning:</b> if this function is called with RXEnab = true and the reception isn't set, the driver will be stuck in a loop without any timeout
 % @return the received mac frame decoded
 %-------------------------------------------------------------------------------
--spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-mac_receive(RXEnab) ->
-    case pmod_uwb:reception(RXEnab) of
+-spec reception(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
+reception(RXEnab) -> 
+    case gen_server:call(?NAME, {reception, RXEnab}) of
         {_Length, Data} -> mac_decode(Data);
         Err -> Err
     end.
-
+%
 %--- Internal ------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
