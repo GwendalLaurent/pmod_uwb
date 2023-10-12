@@ -8,7 +8,7 @@
 setup() ->
     {ok, NetworkSup} = network_sup:start_link(),
     % TODO Use a mock mac layer
-    ieee802154:create_stack(#{}, {mac_layer, {}, #{}}, {mock_phy, {}, #{}}),
+    ieee802154:create_stack(#{}, {mac_layer, {}, #{}}, {mock_phy, {}, perfect}),
     NetworkSup.
 
 teardown(NetworkSup) ->
