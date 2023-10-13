@@ -36,7 +36,10 @@ init({Params, _State}) ->
           end,
     {ok, #{phy => PhyModule}}. 
 
+handle_call(rx, _From, #{ack_req := ?ENABLED, seqnum := Seqnum} = State) -> {reply, rx_ack(Seqnum), State#{ack_req => ?DISABLED}};
 handle_call(rx, _From, State) -> {reply, rx(), State};
+handle_call({tx, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload}, _From, State) ->
+    {reply, tx(FrameControl, MacHeader, Payload), State#{ack_req => ?ENABLED, seqnum => Seqnum}};
 handle_call({tx, FrameControl, MacHeader, Payload}, _From, State) -> {reply, tx(FrameControl, MacHeader, Payload), State};
 handle_call(Request, _From, _State) -> error({unknown_call, Request}).
 
@@ -44,9 +47,15 @@ handle_cast(_, _) ->
   error(not_implemented).
 
 rx() -> 
-    FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
+    FrameControl = #frame_control{pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
     {FrameControl, MacHeader, <<"Hello">>}.
+
+% Received MAC frame for an ACK is only composed of the Frame control, the seqnum and the FCS
+rx_ack(Seqnum) ->
+    FrameControl = #frame_control{frame_type = ?FTYPE_ACK},
+    MacHeader = #mac_header{seqnum = Seqnum},
+    {FrameControl, MacHeader, <<>>}. 
 
 tx(FrameControl, MacHeader, Payload) ->
     Frame = mac_layer:mac_frame(FrameControl, MacHeader, Payload),
