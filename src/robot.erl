@@ -22,7 +22,7 @@ start(_Type, _Args) ->
     {ok, Supervisor} = robot_sup:start_link(),
     {ok, _NetworkSup} = network_sup:start_link(),
     % grisp:add_device(spi2, pmod_uwb),
-    ieee802154:create_stack(#{}, {mac_layer, {}, #{}}, {pmod_uwb, {}, #{}}),
+    ieee802154:create_stack(#{}, {mac_layer, {}, #{}}),
     {ok, Supervisor}.
 
 % @private

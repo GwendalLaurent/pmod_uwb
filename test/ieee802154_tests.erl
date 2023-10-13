@@ -8,7 +8,7 @@
 setup() ->
     {ok, NetworkSup} = network_sup:start_link(),
     % TODO Use a mock mac layer
-    ieee802154:create_stack(#{}, {mac_layer, {}, #{}}, {mock_phy, {}, perfect}),
+    ieee802154:create_stack(#{}, {mock_mac, {}, #{}}),
     NetworkSup.
 
 teardown(NetworkSup) ->
@@ -26,13 +26,17 @@ teardown(NetworkSup) ->
 mac_test_() ->
     {setup, fun setup/0, fun teardown/1, [
         % Encode and decode test functions
-        [fun reception_/0
-        ]
-        % Transmission and reception test functions
-%         [fun transmission_/0]
+        [fun reception_/0,
+         fun transmission_/0]
      ]}.
 
 %--- Tests ---------------------------------------------------------------------
+
+transmission_() ->
+    FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
+    MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
+    Payload = <<"Hello">>,
+    ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, Payload)).
 
 reception_() ->
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},

@@ -28,8 +28,11 @@ stop_link() ->
 
 % ? Link the gen_server to a supervisor ?
 init({Params, _State}) ->
-    #{phy_layer := PHY} = Params,
-    {ok, #{phy => PHY}}. % The state still has to be defined later
+    PhyModule = case Params of
+              #{phy_layer := PHY} -> PHY;
+              _ -> pmod_uwb
+          end,
+    {ok, #{phy => PhyModule}}. 
 
 handle_call({send_data, Message, Options}, _From, #{phy := PHY} = State) -> {reply, PHY:transmit(Message, Options), State};
 handle_call({reception, RXEnab}, _From, #{phy := PHY} = State) -> {reply, PHY:reception(RXEnab), State};

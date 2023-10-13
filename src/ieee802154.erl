@@ -5,7 +5,7 @@
 
 -define(NAME, ?MODULE).
 
--export([create_stack/3]).
+-export([create_stack/2]).
 -export([start_link/1]).
 -export([stop_link/0]).
 
@@ -27,22 +27,20 @@
 % @doc Creates the IEEE 802.15.4 network stack and links the different layers to the appropriate supervisor
 % @param IeeeParams: The parameters for the IEEE module
 % @param MacLayer: A tuple containing the name of the module to use, the parameters in a map and the initial state of the layer
-% @param PhyLayer:A tuple containing the name of the module to use, the parameters in a map and the initial state of the layer
+% If a mock MAC layer is used, no PHY layer is created
 % @end
 %-------------------------------------------------------------------------------
 -spec create_stack(
         IeeeParams::tuple(), 
-        MacLayer::{MacModule::module(), MacParams::map(), MacState::tuple()}, 
-        PhyLayer::{PhyModule::module(), PhyParams::map(), PhyState::tuple()}
+        MacLayer::{MacModule::module(), MacParams::map(), MacState::tuple()}
        ) -> ok.
-create_stack(IeeeParams, MacLayer, PhyLayer) ->
-    {PhyModule, PhyState, PhyParams} = PhyLayer,
-    case PhyModule of
-        pmod_uwb -> grisp:add_device(spi2, pmod_uwb);
-        _ -> network_sup:start_child(phy_layer, PhyModule, [PhyState, PhyParams]) % grisp_device_sup isn't started
-    end,
+create_stack(IeeeParams, MacLayer) ->
     {MacModule, MacState, MacParams} = MacLayer,
-    network_sup:start_child(mac_layer, MacModule, [{maps:put(phy_layer, PhyModule, MacParams), MacState}]),
+    case MacModule of
+        mac_layer -> grisp:add_device(spi2, pmod_uwb);
+        _ -> ok
+    end,
+    network_sup:start_child(mac_layer, MacModule, [{MacParams, MacState}]),
     network_sup:start_child(?NAME, ?MODULE, [maps:put(mac_layer, MacModule, IeeeParams)]).
     
 
@@ -59,7 +57,7 @@ reception() ->
 
 
 %%% gen_statem callbacks
-init(#{mac_layer := MAC} = Params) ->
+init(#{mac_layer := MAC}) ->
     Data = #{cache => #{tx => [], rx => []}, mac_layer => MAC},
     {ok, idle, Data}.
 
@@ -72,17 +70,17 @@ idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data) ->
 idle({call, From}, rx, Data) -> 
     {next_state, rx, Data, [{next_event, internal, {rx, From}}]}.
 
-rx(EventType, {rx, From}, Data) ->
+rx(_EventType, {rx, From}, #{mac_layer := MacLayer} = Data) ->
     io:format("Reception ~n"),
-    case mac_layer:reception() of
+    case MacLayer:reception() of
         {FrameControl, FrameHeader, Payload} -> {next_state, idle, Data, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
         Err -> {next_state, idle, Data, [{reply, From, Err}]}
     end.
 
-tx(_EventType, {tx,FrameControl, FrameHeader, Payload, From}, Data) -> 
-    case mac_layer:send_data(FrameControl, FrameHeader, Payload) of
-        ok -> {next_state, idle, Data, [{reply, From, ok_tx}]};
-        _ -> {next_state, idle, Data, [{reply, From, error_tx}]}
+tx(_EventType, {tx,FrameControl, FrameHeader, Payload, From}, #{mac_layer := MacLayer} = Data) -> 
+    case MacLayer:send_data(FrameControl, FrameHeader, Payload) of
+        ok -> {next_state, idle, Data, [{reply, From, ok}]};
+        Err -> {next_state, idle, Data, [{reply, From, Err}]}
     end.
 
 terminate(_Reason, _State, _Data) ->

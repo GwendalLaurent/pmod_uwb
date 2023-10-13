@@ -1,3 +1,3 @@
 %% encoding: UTF-8
 {application,robot}.
-{modules,[mac_layer,pmod_uwb,robot,two_way_ranging]}.
+{modules,[ieee802154,mac_layer,network_sup,pmod_uwb,robot,two_way_ranging]}.
