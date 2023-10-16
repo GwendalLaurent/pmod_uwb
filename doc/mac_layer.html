@@ -12,45 +12,29 @@
 <h1>Module mac_layer</h1>
 <ul class="index"><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>
 
-<p><b>Behaviours:</b> <a href="gen_server.html"><tt>gen_server</tt></a>.</p>
+<p><b>Behaviours:</b> <a href="mac_layer_behaviour.html"><tt>mac_layer_behaviour</tt></a>.</p>
 
 <h2><a name="index">Function Index</a></h2>
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#handle_call-3">handle_call/3</a></td><td></td></tr>
-<tr><td valign="top"><a href="#handle_cast-2">handle_cast/2</a></td><td></td></tr>
-<tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-2">init/2</a></td><td></td></tr>
 <tr><td valign="top"><a href="#mac_decode-1">mac_decode/1</a></td><td>decodes the MAC frame given in the arguments.</td></tr>
 <tr><td valign="top"><a href="#mac_frame-2">mac_frame/2</a></td><td>builds a mac frame without a payload.</td></tr>
 <tr><td valign="top"><a href="#mac_frame-3">mac_frame/3</a></td><td>builds a mac frame.</td></tr>
 <tr><td valign="top"><a href="#reception-0">reception/0</a></td><td>Receive a frame using the pmod_uwb and decode the frame.</td></tr>
-<tr><td valign="top"><a href="#reception-1">reception/1</a></td><td>Receive a frame using the pmod_uwb and decode the frame.</td></tr>
+<tr><td valign="top"><a href="#rx-2">rx/2</a></td><td></td></tr>
 <tr><td valign="top"><a href="#send_data-3">send_data/3</a></td><td>Sends a MAC frame using the pmod_uwb without any options
  The 2 bytes CRC are automatically added at the end of the payload and
  must not be included in the Payload given in the arguments
 -------------------------------------------------------------------------------.</td></tr>
-<tr><td valign="top"><a href="#send_data-4">send_data/4</a></td><td>Sends a MAC frame using the pmod_uwb using the specified options
- The 2 bytes CRC are automatically added at the end of the payload and
- must not be included in the Payload given in the arguments.</td></tr>
-<tr><td valign="top"><a href="#start_link-1">start_link/1</a></td><td></td></tr>
+<tr><td valign="top"><a href="#start_link-2">start_link/2</a></td><td></td></tr>
 <tr><td valign="top"><a href="#stop_link-0">stop_link/0</a></td><td></td></tr>
+<tr><td valign="top"><a href="#tx-3">tx/3</a></td><td></td></tr>
 </table>
 
 <h2><a name="functions">Function Details</a></h2>
 
-<h3 class="function"><a name="handle_call-3">handle_call/3</a></h3>
+<h3 class="function"><a name="init-2">init/2</a></h3>
 <div class="spec">
-<p><tt>handle_call(Request, From, State) -&gt; any()</tt></p>
-<p> </p>
-</div>
-
-<h3 class="function"><a name="handle_cast-2">handle_cast/2</a></h3>
-<div class="spec">
-<p><tt>handle_cast(Request, State) -&gt; any()</tt></p>
-<p> </p>
-</div>
-
-<h3 class="function"><a name="init-1">init/1</a></h3>
-<div class="spec">
-<p><tt>init(X1) -&gt; any()</tt></p>
+<p><tt>init(State::term(), Params::term()) -&gt; State::term()</tt><br></p>
 <p> </p>
 </div>
 
@@ -81,19 +65,14 @@
 <p> </p>
 <p>returns: the received mac frame decoded
 -------------------------------------------------------------------------------</p>
-</div><p>Equivalent to <a href="#reception-1"><tt>reception(false)</tt></a>.</p>
-<p>Receive a frame using the pmod_uwb and decode the frame
+</div><p>Receive a frame using the pmod_uwb and decode the frame
 </p>
 
-<h3 class="function"><a name="reception-1">reception/1</a></h3>
+<h3 class="function"><a name="rx-2">rx/2</a></h3>
 <div class="spec">
-<p><tt>reception(RXEnab::boolean()) -&gt; {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}</tt><br></p>
-<p><tt>RXEnab</tt>: indicates if the reception was already enabled (or is enabled with delay)
- <b>Warning:</b> if this function is called with RXEnab = true and the reception isn't set, the driver will be stuck in a loop without any timeout<br>
-</p>
-<p>returns: the received mac frame decoded
--------------------------------------------------------------------------------</p>
-</div><p>Receive a frame using the pmod_uwb and decode the frame</p>
+<p><tt>rx(State::term(), From::term()) -&gt; {State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}}</tt><br></p>
+<p> </p>
+</div>
 
 <h3 class="function"><a name="send_data-3">send_data/3</a></h3>
 <div class="spec">
@@ -104,23 +83,21 @@
  must not be included in the Payload given in the arguments
 -------------------------------------------------------------------------------</p>
 
-<h3 class="function"><a name="send_data-4">send_data/4</a></h3>
+<h3 class="function"><a name="start_link-2">start_link/2</a></h3>
 <div class="spec">
-<p><tt>send_data(FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring(), Option::#tx_opts{}) -&gt; ok | {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}</tt><br></p>
-<p> </p>
-</div><p>Sends a MAC frame using the pmod_uwb using the specified options
- The 2 bytes CRC are automatically added at the end of the payload and
- must not be included in the Payload given in the arguments</p>
-
-<h3 class="function"><a name="start_link-1">start_link/1</a></h3>
-<div class="spec">
-<p><tt>start_link(Params::{map(), tuple()}) -&gt; {ok, pid()}</tt><br></p>
+<p><tt>start_link(State::map(), Params::map()) -&gt; {ok, pid()}</tt><br></p>
 <p> </p>
 </div>
 
 <h3 class="function"><a name="stop_link-0">stop_link/0</a></h3>
 <div class="spec">
 <p><tt>stop_link() -&gt; any()</tt></p>
+<p> </p>
+</div>
+
+<h3 class="function"><a name="tx-3">tx/3</a></h3>
+<div class="spec">
+<p><tt>tx(State::term(), From::term(), X3::{FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}) -&gt; State::term()</tt><br></p>
 <p> </p>
 </div>
 <hr>

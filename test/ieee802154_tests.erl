@@ -6,22 +6,10 @@
 
 %--- Setup ---------------------------------------------------------------------
 setup() ->
-    {ok, NetworkSup} = network_sup:start_link(),
-    % TODO Use a mock mac layer
-    ieee802154:create_stack(#{}, {mock_mac, {}, #{}}),
-    NetworkSup.
+    ieee802154:start_link(#{mac_layer => mock_mac}).
 
-teardown(NetworkSup) ->
-    network_sup:terminate_child(ieee802154), % TODO create a kill stack function
-    network_sup:delete_child(ieee802154),
-    exit(NetworkSup, normal),
-    Ref = monitor(process, NetworkSup),
-    receive
-        {'DOWN', Ref, process, NetworkSup, _Reason} -> ok;
-        _ -> ok
-    end.
-
-
+teardown(_Mac) ->
+    ieee802154:stop_link().
 
 mac_test_() ->
     {setup, fun setup/0, fun teardown/1, [

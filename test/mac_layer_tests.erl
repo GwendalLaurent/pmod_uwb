@@ -6,23 +6,8 @@
 
 %--- Setup ---------------------------------------------------------------------
 
-top_setup() ->
-    {ok, NetworkSup} = network_sup:start_link(),
-    NetworkSup.
-
-top_cleanup(NetworkSup) ->
-    exit(NetworkSup, normal),
-    Ref = monitor(process, NetworkSup),
-    receive
-        {'DOWN', Ref, process, NetworkSup, _Reason} -> ok;
-        _ -> ok
-    end.
-
-
 mac_test_() ->
-    {setup,
-     fun top_setup/0,
-     fun top_cleanup/1,
+    {inorder,
      [{generator, fun mac_encode_decode/0},
       {generator, fun mac_perfect_phy/0},
       {generator, fun mac_faulty_phy/0},
@@ -39,32 +24,30 @@ mac_encode_decode() ->
       fun decode_mac_message_no_src_/0,
       fun decode_mac_message_no_src_no_compt_/0]}.
 
-setup() ->
-    network_sup:start_child(mac_layer, mac_layer, [{#{phy_layer => mock_phy}, #{}}]),
-    network_sup:start_child(phy_layer, mock_phy, [#{}, perfect]).
+setup_perfect() ->
+    mock_phy:start_link(spi2, {perfect, #{}}),
+    mac_layer:start_link(#{}, #{phy_layer => mock_phy}).
 
 teardown(_) ->
-    network_sup:terminate_child(mac_layer),
-    network_sup:delete_child(mac_layer),
-    network_sup:terminate_child(phy_layer),
-    network_sup:delete_child(phy_layer).
+    mock_phy:stop_link(),
+    mac_layer:stop_link().
 
 mac_perfect_phy() ->
-    {setup, fun setup/0, fun teardown/1, [
+    {setup, fun setup_perfect/0, fun teardown/1, [
      fun transmission_/0,
      fun reception_perfect_/0]}.
 
 mac_faulty_setup() ->
-    network_sup:start_child(mac_layer, mac_layer, [{#{phy_layer => mock_phy}, #{}}]),
-    network_sup:start_child(phy_layer, mock_phy, [#{}, faulty]).
+    mock_phy:start_link(spi2, {faulty, #{}}),
+    mac_layer:start_link(#{}, #{phy_layer => mock_phy}).
 
 mac_faulty_phy() ->
     {setup, fun mac_faulty_setup/0, fun teardown/1, [
      fun reception_faulty/0]}.
 
 mac_lossy_setup() ->
-    network_sup:start_child(mac_layer, mac_layer, [{#{phy_layer => mock_phy}, #{}}]),
-    network_sup:start_child(phy_layer, mock_phy, [#{}, loss]).
+    mock_phy:start_link(spi2, {lossy, #{}}),
+    mac_layer:start_link(#{}, #{phy_layer => mock_phy}).
 
 mac_lossy_phy() -> % Note: Not sure if I should keep that kind of tests
     {setup, fun mac_lossy_setup/0, fun teardown/1, [

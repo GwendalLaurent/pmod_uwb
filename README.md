@@ -4,6 +4,8 @@ PMOD UWB
 This repository contains the implementation of the pmod uwb's driver as well as an implementation of the MAC layer and a few examples.
 The whole implementation was done during my master thesis at UCLouvain.
 
+It also contains the implementation of a IEEE 802.15.4 stack. This job is still in progress.
+
 Structure of the repository
 -----
 
@@ -27,3 +29,35 @@ Before trying to deploy an example, you have to change the path of the SD card i
 When this is done, you have to run `rebar3 compile` to build the application, and `rebar3 grisp deploy` to deploy the app on your SD card.
 
 Each example contain an API function for the *sender* and a function for the *receiver*.
+
+Run the tests
+------
+To run the tests, you can run the following command in your shell at the root of the project:
+```
+rebar3 eunit
+```
+
+Robot Example
+-------------
+
+```erlang
+start(_Type, _Args) -> 
+    {ok, Supervisor} = robot_sup:start_link(),
+    grisp:add_device(spi2, pmod_uwb), % Starts the driver for the pmod
+    ieee802154:start_link(#{mac_layer => mac_layer}), % Create the IEEE 802.15.4 stack
+    {ok, Supervisor}.
+```
+
+Simple transmission function
+```erlang
+tx() ->
+    FrameControl = #frame_control{}, % default frame control
+    MacHeader = #mac_header{}, % default frame control
+    ieee802154:transmition(FrameControl, MacHeader, <<"Test">>). % 
+```
+
+Simple reception function
+```erlang
+rx() ->
+    ieee802154:reception().
+```

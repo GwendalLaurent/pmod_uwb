@@ -2,8 +2,10 @@
 -behaviour(gen_server).
 
 -export([start_link/2]).
+-export([stop_link/0]).
+
 -export([transmit/2]).
--export([reception/1]).
+-export([reception/0]).
 
 %%% gen_server callbacks
 -export([init/1]).
@@ -14,22 +16,25 @@
 
 % --- API -----------------------------------------
 
-start_link(Params, State) ->
+start_link(_Connector, {State, Params}) ->
     gen_server:start_link({local, ?NAME}, ?MODULE, {Params, State}, []).
+
+stop_link() ->
+    gen_server:stop(?NAME).
 
 transmit(Data, Options) ->
     gen_server:call(?NAME, {transmit, Data, Options}).
 
-reception(_) ->
+reception() ->
     gen_server:call(?NAME, {reception}).
 
 %%% gen_server callbacks
-init({Params, State}) ->
+init({_Params, State}) ->
     io:format("Mock phy created~n"),
     case State of
         perfect -> {ok, perfect};
         faulty -> {ok, faulty};
-        loss -> {ok, loss}
+        lossy -> {ok, loss}
     end.
 
 handle_call({transmit, Data, Options}, _From, State) -> {reply, tx(Data, Options), State};

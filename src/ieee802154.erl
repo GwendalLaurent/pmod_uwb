@@ -1,11 +1,10 @@
 -module(ieee802154).
 -behaviour(gen_statem).
 
+-include_lib("eunit/include/eunit.hrl").
+
 -include("mac_layer.hrl").
 
--define(NAME, ?MODULE).
-
--export([create_stack/2]).
 -export([start_link/1]).
 -export([stop_link/0]).
 
@@ -23,41 +22,41 @@
 -export([tx/3]).
 
 
-%-------------------------------------------------------------------------------
-% @doc Creates the IEEE 802.15.4 network stack and links the different layers to the appropriate supervisor
-% @param IeeeParams: The parameters for the IEEE module
-% @param MacLayer: A tuple containing the name of the module to use, the parameters in a map and the initial state of the layer
-% If a mock MAC layer is used, no PHY layer is created
-% @end
-%-------------------------------------------------------------------------------
--spec create_stack(
-        IeeeParams::tuple(), 
-        MacLayer::{MacModule::module(), MacParams::map(), MacState::tuple()}
-       ) -> ok.
-create_stack(IeeeParams, MacLayer) ->
-    {MacModule, MacState, MacParams} = MacLayer,
-    case MacModule of
-        mac_layer -> grisp:add_device(spi2, pmod_uwb);
-        _ -> ok
-    end,
-    network_sup:start_child(mac_layer, MacModule, [{MacParams, MacState}]),
-    network_sup:start_child(?NAME, ?MODULE, [maps:put(mac_layer, MacModule, IeeeParams)]).
-    
 
-start_link(Params) -> gen_statem:start_link({local, ?NAME}, ?MODULE, Params, []).
+%% ---------------------------------------------------------------------------------------
+%% @doc Starts the IEEE 812.15.4 stack and creates a link
+%% 
+%% The parameter map has to be composed of at least:
+%% * mac_layer: The module that has to be used for the mac_layer 
+%%
+%% ```
+%% The following code will start the stack using the mac_layer module
+%% 1> ieee802154:start_link(#{mac_layer => mac_layer}).
+%% 
+%% Starting using a mock layer
+%% 2> ieee802154:start_link(#mac_layer => mock_mac}).
+%% '''
+%%
+%% @param Params: A map containing the parameters of the IEEE stack
+%%
+%% @end
+%% ---------------------------------------------------------------------------------------
+-spec start_link(Params::map()) -> {ok, pid()} | {error, any()}.
+start_link(Params) -> gen_statem:start_link({local, ?MODULE}, ?MODULE, Params, []).
 
 stop_link() ->
-    gen_server:stop(?NAME).
+    gen_statem:stop(?MODULE).
 
 -spec transmition(FrameControl :: #frame_control{}, FrameHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
 transmition(FrameControl, FrameHeader, Payload) -> gen_statem:call(?MODULE, {tx, FrameControl, FrameHeader, Payload}, infinity).
 
 reception() -> 
-    gen_statem:call(?NAME, rx, infinity).
+    gen_statem:call(?MODULE, rx, infinity).
 
 
 %%% gen_statem callbacks
 init(#{mac_layer := MAC}) ->
+    MAC:start_link(#{}, #{}),
     Data = #{cache => #{tx => [], rx => []}, mac_layer => MAC},
     {ok, idle, Data}.
 
@@ -71,7 +70,6 @@ idle({call, From}, rx, Data) ->
     {next_state, rx, Data, [{next_event, internal, {rx, From}}]}.
 
 rx(_EventType, {rx, From}, #{mac_layer := MacLayer} = Data) ->
-    io:format("Reception ~n"),
     case MacLayer:reception() of
         {FrameControl, FrameHeader, Payload} -> {next_state, idle, Data, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
         Err -> {next_state, idle, Data, [{reply, From, Err}]}
@@ -83,8 +81,9 @@ tx(_EventType, {tx,FrameControl, FrameHeader, Payload, From}, #{mac_layer := Mac
         Err -> {next_state, idle, Data, [{reply, From, Err}]}
     end.
 
-terminate(_Reason, _State, _Data) ->
-    ok.
+terminate(_Reason, _State, Data) ->
+    #{mac_layer := MAC} = Data,
+    MAC:stop_link().
 
 code_change(_, _, _, _) ->
     error(not_implemented).
