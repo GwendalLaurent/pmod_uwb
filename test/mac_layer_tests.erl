@@ -26,33 +26,32 @@ mac_encode_decode() ->
 
 setup_perfect() ->
     mock_phy:start_link(spi2, {perfect, #{}}),
-    mac_layer:start_link(#{}, #{phy_layer => mock_phy}).
+    gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
 
 teardown(_) ->
-    mock_phy:stop_link(),
-    mac_layer:stop_link().
+    mock_phy:stop_link().
 
 mac_perfect_phy() ->
-    {setup, fun setup_perfect/0, fun teardown/1, [
-     fun transmission_/0,
-     fun reception_perfect_/0]}.
+    {setup, fun setup_perfect/0, fun teardown/1, {with, [
+     fun transmission_/1,
+     fun reception_perfect_/1]}}.
 
 mac_faulty_setup() ->
     mock_phy:start_link(spi2, {faulty, #{}}),
-    mac_layer:start_link(#{}, #{phy_layer => mock_phy}).
+    gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
 
 mac_faulty_phy() ->
-    {setup, fun mac_faulty_setup/0, fun teardown/1, [
-     fun reception_faulty/0]}.
+    {setup, fun mac_faulty_setup/0, fun teardown/1, {with, [
+     fun reception_faulty/1]}}.
 
 mac_lossy_setup() ->
     mock_phy:start_link(spi2, {lossy, #{}}),
-    mac_layer:start_link(#{}, #{phy_layer => mock_phy}).
+    gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
 
 mac_lossy_phy() -> % Note: Not sure if I should keep that kind of tests
-    {setup, fun mac_lossy_setup/0, fun teardown/1, [
-        {timeout, 60, [fun reception_lossy/0]}
-    ]}.
+    {setup, fun mac_lossy_setup/0, fun teardown/1, {with, [
+        fun(State) -> {timeout, 60, {with, State, [fun reception_lossy/1]}} end
+    ]}}.
 
 %--- Encode/Decode Tests ---------------------------------------------------------------------
 
@@ -113,27 +112,27 @@ decode_mac_message_no_src_no_compt_() ->
                  mac_layer:mac_decode(Message)).
 
 %--- perfect phy layer test ---------------------------------------------------------------------
-transmission_() ->
-    ?assertEqual(ok,
-                 mac_layer:send_data(#frame_control{}, #mac_header{}, <<"Test">>)).
+transmission_(State) ->
+    ?assertMatch({_, ok}, gen_mac_layer:tx(State, #frame_control{}, #mac_header{}, <<"Test">>)).
 
-reception_perfect_() ->
+reception_perfect_(State) ->
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
-    ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, mac_layer:reception()).
+    {_, ReceivedFC, ReceivedMH, ReceivedPayload} = gen_mac_layer:rx(State),
+    ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, {ReceivedFC, ReceivedMH, ReceivedPayload}).
 
 %--- faulty phy layer test ---------------------------------------------------------------------
-reception_faulty() ->
-    ?assertEqual(rxpto, mac_layer:reception()).
+reception_faulty(State) ->
+    ?assertMatch({_, rxpto}, gen_mac_layer:rx(State)).
 
 %--- faulty phy layer test ---------------------------------------------------------------------
-reception_lossy() ->
-    Received = mac_layer:reception(),
+reception_lossy(State) ->
+    Received = gen_mac_layer:rx(State), 
     
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
 
     case Received of
-        rxpto -> reception_lossy();
-        _ -> ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, Received)
+        {_, rxpto} -> reception_lossy(State);
+        {_, ReceivedFC, ReceivedMH, ReceivedPayload} -> ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, {ReceivedFC, ReceivedMH, ReceivedPayload})
     end.

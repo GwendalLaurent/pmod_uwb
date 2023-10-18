@@ -22,6 +22,7 @@
 -export([tx/3]).
 
 
+% --- API --------------------------------------------------------------------------------
 
 %% ---------------------------------------------------------------------------------------
 %% @doc Starts the IEEE 812.15.4 stack and creates a link
@@ -54,10 +55,10 @@ reception() ->
     gen_statem:call(?MODULE, rx, infinity).
 
 
-%%% gen_statem callbacks
+% --- gen_statem callbacks --------------------------------------------------------------
 init(#{mac_layer := MAC}) ->
-    MAC:start_link(#{}, #{}),
-    Data = #{cache => #{tx => [], rx => []}, mac_layer => MAC},
+    MacState = gen_mac_layer:init(MAC, #{}),
+    Data = #{cache => #{tx => [], rx => []}, mac_layer => MacState},
     {ok, idle, Data}.
 
 callback_mode() ->
@@ -69,21 +70,20 @@ idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data) ->
 idle({call, From}, rx, Data) -> 
     {next_state, rx, Data, [{next_event, internal, {rx, From}}]}.
 
-rx(_EventType, {rx, From}, #{mac_layer := MacLayer} = Data) ->
-    case MacLayer:reception() of
-        {FrameControl, FrameHeader, Payload} -> {next_state, idle, Data, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
-        Err -> {next_state, idle, Data, [{reply, From, Err}]}
+rx(_EventType, {rx, From}, #{mac_layer := MacState} = Data) ->
+    case gen_mac_layer:rx(MacState) of
+        {NewMacState, FrameControl, FrameHeader, Payload} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
+        {NewMacState, Err} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, Err}]}
     end.
 
-tx(_EventType, {tx,FrameControl, FrameHeader, Payload, From}, #{mac_layer := MacLayer} = Data) -> 
-    case MacLayer:send_data(FrameControl, FrameHeader, Payload) of
-        ok -> {next_state, idle, Data, [{reply, From, ok}]};
-        Err -> {next_state, idle, Data, [{reply, From, Err}]}
+tx(_EventType, {tx,FrameControl, MacHeader, Payload, From}, #{mac_layer := MacLayerState} = Data) -> 
+    case gen_mac_layer:tx(MacLayerState, FrameControl, MacHeader, Payload) of
+        {NewMacState, ok} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, ok}]};
+        {NewMacState, Err} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {error, Err}}]} 
     end.
 
-terminate(_Reason, _State, Data) ->
-    #{mac_layer := MAC} = Data,
-    MAC:stop_link().
+terminate(_Reason, _State, _Data) ->
+    ok.
 
 code_change(_, _, _, _) ->
     error(not_implemented).

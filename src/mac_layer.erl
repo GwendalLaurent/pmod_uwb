@@ -1,74 +1,37 @@
 -module(mac_layer).
--behaviour(mac_layer_behaviour).
+-behaviour(gen_mac_layer).
 
 -include("mac_layer.hrl").
 
-% Callbacks
--export([start_link/2]).
--export([stop_link/0]).
-
--export([send_data/3, reception/0]).
-% -export([send_data/4, reception/1]).
-
-%%% mac_layer_behaviour callbacks
--export([init/2]).
--export([tx/3]).
--export([rx/2]).
+%%% gen_mac_layer callbacks
+-export([init/1]).
+-export([tx/4]).
+-export([rx/1]).
 
 -export([mac_decode/1]).
 -export([mac_frame/2, mac_frame/3]).
 
 
-
-%--- API -----------------------------------------------------------------------
--spec start_link(State::map(), Params::map()) -> {ok, pid()}.
-start_link(State, Params) ->
-    mac_layer_behaviour:start_link(?MODULE, State, Params).
-
-stop_link() ->
-    mac_layer_behaviour:stop_link().
-
-%-------------------------------------------------------------------------------
-% @doc Sends a MAC frame using the pmod_uwb without any options
-% The 2 bytes CRC are automatically added at the end of the payload and
-% must not be included in the Payload given in the arguments
-%-------------------------------------------------------------------------------
--spec send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
-send_data(FrameControl, MacHeader, Payload) ->
-    mac_layer_behaviour:tx(FrameControl, MacHeader, Payload).
-
-%-------------------------------------------------------------------------------
-% @doc Receive a frame using the pmod_uwb and decode the frame 
-%
-% @return the received mac frame decoded
-%-------------------------------------------------------------------------------
--spec reception() -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-reception() ->
-    case mac_layer_behaviour:rx() of
-        {_Length, Data} -> mac_decode(Data);
-        Err -> Err
-    end.
-
 %--- mac_layer_behaviour callback functions ---------------------------------------------
 
--spec init(State::term(), Params::term()) -> State :: term().
-init(State, Params) ->
+-spec init(Params::term()) -> State :: term().
+init(Params) ->
     PhyModule = case Params of
               #{phy_layer := PHY} -> PHY;
               _ -> pmod_uwb
           end,
-    {ok, State#{phy_layer => PhyModule}}. 
+    #{phy_layer => PhyModule}. 
 
--spec tx(State::term(), From::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}) -> State::term().
-tx(#{phy_layer := PhyModule} = State, From, {FrameControl, MacHeader, Payload}) ->
-    PhyModule:transmit(mac_frame(FrameControl, MacHeader, Payload), #tx_opts{}), 
-    {reply, State, From, ok}.
+tx(#{phy_layer := PhyModule} = State, FrameControl, MacHeader, Payload) ->
+    case PhyModule:transmit(mac_frame(FrameControl, MacHeader, Payload), #tx_opts{}) of
+        ok -> {ok, State};
+        Error -> {error, State, Error}
+    end.
 
--spec rx(State::term(), From::term()) -> {State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}}.
-rx(#{phy_layer := PhyModule} = State, From) ->
+rx(#{phy_layer := PhyModule} = State) ->
     case PhyModule:reception() of
-        {_Length, Frame} -> {reply, State, From, mac_decode(Frame)};
-        Err -> {reply, State, From, Err}
+        {_Length, Frame} -> {ok, State, mac_decode(Frame)};
+        Err -> {error, State, Err}
     end.
 
 %--- Internal ------------------------------------------------------------------

@@ -3,7 +3,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--behaviour(mac_layer_behaviour).
+-behaviour(gen_mac_layer).
 
 -export([send_data/3]).
 % -export([send_data/4]). 
@@ -14,9 +14,9 @@
 -export([stop_link/0]).
 
 %%% gen_server callbacks
--export([init/2]).
--export([tx/3]).
--export([rx/2]).
+-export([init/1]).
+-export([tx/4]).
+-export([rx/1]).
 
 
 % --- API ------------------
@@ -35,22 +35,20 @@ stop_link() ->
     mac_layer_behaviour:stop_link().
 
 % --- Callbacks -----------
-init(State, Params) ->
+init(Params) ->
     PhyModule = case Params of
               #{phy_layer := PHY} -> PHY;
               _ -> pmod_uwb
           end,
-    {ok, State#{phy_layer => PhyModule}}. 
+    #{phy_layer => PhyModule}. 
 
 
-tx(State, From, {#frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload}) -> {reply, State#{ack_req => ?ENABLED, seqnum => Seqnum}, From, transmission(FrameControl, MacHeader, Payload)};
-tx(State, From, {FrameControl, MacHeader, Payload}) -> {reply, State, From, transmission(FrameControl, MacHeader, Payload)};
-tx(State, From, _Content) -> {reply, State, From, ok}.
+tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State#{ack_req => ?ENABLED, seqnum => Seqnum}};
+tx(State, FrameControl, MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State}.
 
 
-rx(#{ack_req := ?ENABLED, seqnum := Seqnum} = State, From) -> {reply, State#{ack_req => ?DISABLED}, From, receive_ack(Seqnum)};
-rx(State, From) -> {reply, State, From, receive_()};
-rx(State, From) -> {reply, State, From, ok}.
+rx(#{ack_req := ?ENABLED, seqnum := Seqnum} = State) -> {ok, State#{ack_req => ?DISABLED}, receive_ack(Seqnum)};
+rx(State) -> {ok, State, receive_()}.
 
 % --- Internals ---------
 
