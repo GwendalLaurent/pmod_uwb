@@ -7,6 +7,7 @@
 -export([init/1]).
 -export([tx/4]).
 -export([rx/1]).
+-export([terminate/2]).
 
 -export([mac_decode/1]).
 -export([mac_frame/2, mac_frame/3]).
@@ -25,14 +26,16 @@ init(Params) ->
 tx(#{phy_layer := PhyModule} = State, FrameControl, MacHeader, Payload) ->
     case PhyModule:transmit(mac_frame(FrameControl, MacHeader, Payload), #tx_opts{}) of
         ok -> {ok, State};
-        Error -> {error, State, Error}
+        Error -> {error, Error, State}
     end.
 
 rx(#{phy_layer := PhyModule} = State) ->
     case PhyModule:reception() of
         {_Length, Frame} -> {ok, State, mac_decode(Frame)};
-        Err -> {error, State, Err}
+        Err -> {error, Err, State}
     end.
+
+terminate(_State, _Reason) -> ok.
 
 %--- Internal ------------------------------------------------------------------
 

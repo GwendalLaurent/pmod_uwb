@@ -17,6 +17,7 @@
 -export([init/1]).
 -export([tx/4]).
 -export([rx/1]).
+-export([terminate/2]).
 
 
 % --- API ------------------
@@ -49,6 +50,8 @@ tx(State, FrameControl, MacHeader, Payload) -> {transmission(FrameControl, MacHe
 
 rx(#{ack_req := ?ENABLED, seqnum := Seqnum} = State) -> {ok, State#{ack_req => ?DISABLED}, receive_ack(Seqnum)};
 rx(State) -> {ok, State, receive_()}.
+
+terminate(_State, _Reason) -> ok.
 
 % --- Internals ---------
 

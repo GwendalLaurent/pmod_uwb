@@ -28,7 +28,8 @@ setup_perfect() ->
     mock_phy:start_link(spi2, {perfect, #{}}),
     gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
 
-teardown(_) ->
+teardown(State) ->
+    gen_mac_layer:stop(State, exit),
     mock_phy:stop_link().
 
 mac_perfect_phy() ->
@@ -113,17 +114,17 @@ decode_mac_message_no_src_no_compt_() ->
 
 %--- perfect phy layer test ---------------------------------------------------------------------
 transmission_(State) ->
-    ?assertMatch({_, ok}, gen_mac_layer:tx(State, #frame_control{}, #mac_header{}, <<"Test">>)).
+    ?assertMatch({ok, _}, gen_mac_layer:tx(State, #frame_control{}, #mac_header{}, <<"Test">>)).
 
 reception_perfect_(State) ->
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
-    {_, ReceivedFC, ReceivedMH, ReceivedPayload} = gen_mac_layer:rx(State),
+    {ok, _, {ReceivedFC, ReceivedMH, ReceivedPayload}} = gen_mac_layer:rx(State),
     ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, {ReceivedFC, ReceivedMH, ReceivedPayload}).
 
 %--- faulty phy layer test ---------------------------------------------------------------------
 reception_faulty(State) ->
-    ?assertMatch({_, rxpto}, gen_mac_layer:rx(State)).
+    ?assertMatch({error, rxpto, _}, gen_mac_layer:rx(State)).
 
 %--- faulty phy layer test ---------------------------------------------------------------------
 reception_lossy(State) ->
@@ -133,6 +134,6 @@ reception_lossy(State) ->
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
 
     case Received of
-        {_, rxpto} -> reception_lossy(State);
-        {_, ReceivedFC, ReceivedMH, ReceivedPayload} -> ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, {ReceivedFC, ReceivedMH, ReceivedPayload})
+        {error, rxpto, _} -> reception_lossy(State);
+        {ok, _, {ReceivedFC, ReceivedMH, ReceivedPayload}} -> ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, {ReceivedFC, ReceivedMH, ReceivedPayload})
     end.

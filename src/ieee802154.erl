@@ -54,7 +54,6 @@ transmition(FrameControl, FrameHeader, Payload) -> gen_statem:call(?MODULE, {tx,
 reception() -> 
     gen_statem:call(?MODULE, rx, infinity).
 
-
 % --- gen_statem callbacks --------------------------------------------------------------
 init(#{mac_layer := MAC}) ->
     MacState = gen_mac_layer:init(MAC, #{}),
@@ -72,20 +71,18 @@ idle({call, From}, rx, Data) ->
 
 rx(_EventType, {rx, From}, #{mac_layer := MacState} = Data) ->
     case gen_mac_layer:rx(MacState) of
-        {NewMacState, FrameControl, FrameHeader, Payload} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
-        {NewMacState, Err} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, Err}]}
+        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
+        {error, Err, NewMacState} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, Err}]}
     end.
 
 tx(_EventType, {tx,FrameControl, MacHeader, Payload, From}, #{mac_layer := MacLayerState} = Data) -> 
     case gen_mac_layer:tx(MacLayerState, FrameControl, MacHeader, Payload) of
-        {NewMacState, ok} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, ok}]};
-        {NewMacState, Err} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {error, Err}}]} 
+        {ok, NewMacState} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, ok}]};
+        {error, Err, NewMacState} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {error, Err}}]} 
     end.
 
-terminate(_Reason, _State, _Data) ->
-    ok.
+terminate(Reason, _State, #{mac_layer := MacLayerState}) ->
+    gen_mac_layer:stop(MacLayerState, Reason).
 
 code_change(_, _, _, _) ->
     error(not_implemented).
-
-
