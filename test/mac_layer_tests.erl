@@ -124,7 +124,7 @@ reception_perfect_(State) ->
 
 %--- faulty phy layer test ---------------------------------------------------------------------
 reception_faulty(State) ->
-    ?assertMatch({error, rxpto, _}, gen_mac_layer:rx(State)).
+    ?assertMatch({error, _, rxpto}, gen_mac_layer:rx(State)).
 
 %--- faulty phy layer test ---------------------------------------------------------------------
 reception_lossy(State) ->
@@ -134,6 +134,6 @@ reception_lossy(State) ->
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
 
     case Received of
-        {error, rxpto, _} -> reception_lossy(State);
+        {error, _, rxpto} -> reception_lossy(State);
         {ok, _, {ReceivedFC, ReceivedMH, ReceivedPayload}} -> ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, {ReceivedFC, ReceivedMH, ReceivedPayload})
     end.

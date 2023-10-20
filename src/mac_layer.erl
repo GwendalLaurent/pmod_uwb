@@ -26,13 +26,13 @@ init(Params) ->
 tx(#{phy_layer := PhyModule} = State, FrameControl, MacHeader, Payload) ->
     case PhyModule:transmit(mac_frame(FrameControl, MacHeader, Payload), #tx_opts{}) of
         ok -> {ok, State};
-        Error -> {error, Error, State}
+        Error -> {error, State, Error}
     end.
 
 rx(#{phy_layer := PhyModule} = State) ->
     case PhyModule:reception() of
         {_Length, Frame} -> {ok, State, mac_decode(Frame)};
-        Err -> {error, Err, State}
+        Err -> {error, State, Err}
     end.
 
 terminate(_State, _Reason) -> ok.
