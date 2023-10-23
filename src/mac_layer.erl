@@ -1,13 +1,43 @@
 -module(mac_layer).
+-behaviour(gen_mac_layer).
 
 -include("mac_layer.hrl").
 
--export([mac_send_data/3, mac_send_data/4, mac_receive/0, mac_receive/1]).
+%%% gen_mac_layer callbacks
+-export([init/1]).
+-export([tx/4]).
+-export([rx/1]).
+-export([terminate/2]).
+
 -export([mac_decode/1]).
 -export([mac_frame/2, mac_frame/3]).
 
 
-%--- API -----------------------------------------------------------------------
+%--- mac_layer_behaviour callback functions ---------------------------------------------
+
+-spec init(Params::term()) -> State :: term().
+init(Params) ->
+    PhyModule = case Params of
+              #{phy_layer := PHY} -> PHY;
+              _ -> pmod_uwb
+          end,
+    #{phy_layer => PhyModule}. 
+
+tx(#{phy_layer := PhyModule} = State, FrameControl, MacHeader, Payload) ->
+    case PhyModule:transmit(mac_frame(FrameControl, MacHeader, Payload), #tx_opts{}) of
+        ok -> {ok, State};
+        Error -> {error, State, Error}
+    end.
+
+rx(#{phy_layer := PhyModule} = State) ->
+    case PhyModule:reception() of
+        {_Length, Frame} -> {ok, State, mac_decode(Frame)};
+        Err -> {error, State, Err}
+    end.
+
+terminate(_State, _Reason) -> ok.
+
+%--- Internal ------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
 % @doc builds a mac frame without a payload
@@ -27,52 +57,6 @@ mac_frame(FrameControl, MacHeader) ->
 mac_frame(FrameControl, MacHeader, Payload) ->
     Header = build_mac_header(FrameControl, MacHeader),
     <<Header/bitstring, Payload/bitstring>>.
-
-%-------------------------------------------------------------------------------
-% @doc Sends a MAC frame using the pmod_uwb without any options
-% The 2 bytes CRC are automatically added at the end of the payload and
-% must not be included in the Payload given in the arguments
-%-------------------------------------------------------------------------------
--spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
-mac_send_data(FrameControl, MacHeader, Payload) ->
-    mac_send_data(FrameControl, MacHeader, Payload, #tx_opts{}).
-
-%-------------------------------------------------------------------------------
-% @doc Sends a MAC frame using the pmod_uwb using the specified options 
-% The 2 bytes CRC are automatically added at the end of the payload and
-% must not be included in the Payload given in the arguments
-% @end
-%-------------------------------------------------------------------------------
--spec mac_send_data(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring(), Option :: #tx_opts{}) -> ok | {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-mac_send_data(FrameControl, MacHeader, Payload, Options) ->
-    Message = mac_frame(FrameControl, MacHeader, Payload),
-    pmod_uwb:transmit(Message, Options).
-
-%-------------------------------------------------------------------------------
-% @doc Receive a frame using the pmod_uwb and decode the frame 
-%
-% @equiv mac_receive(false)
-%
-% @return the received mac frame decoded
-%-------------------------------------------------------------------------------
--spec mac_receive() -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-mac_receive() ->
-    mac_receive(false).
-
-%-------------------------------------------------------------------------------
-% @doc Receive a frame using the pmod_uwb and decode the frame 
-% @param RXEnab indicates if the reception was already enabled (or is enabled with delay)
-% <b>Warning:</b> if this function is called with RXEnab = true and the reception isn't set, the driver will be stuck in a loop without any timeout
-% @return the received mac frame decoded
-%-------------------------------------------------------------------------------
--spec mac_receive(RXEnab :: boolean()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}.
-mac_receive(RXEnab) ->
-    case pmod_uwb:reception(RXEnab) of
-        {_Length, Data} -> mac_decode(Data);
-        Err -> Err
-    end.
-
-%--- Internal ------------------------------------------------------------------
 
 %-------------------------------------------------------------------------------
 % @doc builds a mac header based on the FrameControl and the MacHeader structures given in the args.
@@ -207,3 +191,5 @@ reverse_byte_order(<<Head:8>>, Acc) ->
     <<Head:8, Acc/bitstring>>;
 reverse_byte_order(<<Head:8, Tail/bitstring>>, Acc) ->
     reverse_byte_order(Tail, <<Head:8, Acc/bitstring>>). 
+
+
