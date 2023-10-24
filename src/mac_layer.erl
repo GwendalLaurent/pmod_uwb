@@ -7,6 +7,8 @@
 -export([init/1]).
 -export([tx/4]).
 -export([rx/1]).
+-export([rx_on/2]).
+-export([rx_off/1]).        
 -export([terminate/2]).
 
 -export([mac_decode/1]).
@@ -35,9 +37,34 @@ rx(#{phy_layer := PhyModule} = State) ->
         Err -> {error, State, Err}
     end.
 
-terminate(_State, _Reason) -> ok.
+rx_on(State, Callback) ->
+    LoopPid = spawn_link(fun() -> rx_loop(State, Callback) end), 
+    {ok, State#{loop_pid => LoopPid}}.
 
-%--- Internal ------------------------------------------------------------------
+rx_off(#{phy_layer := PhyModule} = State) ->
+    case State of
+        #{loop_pid := LoopPid} -> unlink(LoopPid), exit(LoopPid, shutdown);
+        _ -> ok
+    end,
+    PhyModule:disable_rx(),
+    {ok, maps:remove(loop_pid, State)}.
+
+terminate(State, _Reason) -> 
+    case State of
+        #{loop_pid := LoopPid} -> unlink(LoopPid), exit(LoopPid, stop);
+        _ -> ok
+    end.
+
+%--- Internal: RXloop ----------------------------------------------------------
+
+% NOTE : ! If the loop crashes, there's no way to detect it
+rx_loop(MacState, Callback) -> 
+    case rx(MacState) of
+        {ok, State, Frame} -> Callback(Frame), rx_loop(State, Callback);
+        {error, State, _Err} -> rx_loop(State, Callback)
+    end.
+
+%--- Internal: Frame encoding/decoding -----------------------------------------
 
 %-------------------------------------------------------------------------------
 % @doc builds a mac frame without a payload
