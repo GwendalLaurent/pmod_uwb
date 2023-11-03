@@ -3,3 +3,5 @@ rebar.lock
 # *.config
 doc/
 erlang_ls.config
+
+*.old

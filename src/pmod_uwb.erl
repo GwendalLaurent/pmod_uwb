@@ -7,6 +7,7 @@
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, wait_for_transmission/0, reception/0, reception/1]).
 -export([set_frame_timeout/1]).
 -export([softreset/0, clear_rx_flags/0]).
+-export([disable_rx/0]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
 
@@ -213,6 +214,13 @@ enable_rx() ->
     % io:format("Enabling reception~n"),
     clear_rx_flags(),
     call({write, sys_ctrl, #{rxenab => 2#1}}).
+
+%% ---------------------------------------------------------------------------------------
+%% @doc Disables the reception on the pmod
+%% @end
+%% ---------------------------------------------------------------------------------------
+disable_rx() ->
+    call({write, sys_ctrl, #{trxoff => 2#1}}).
 
 wait_for_reception() ->
     % io:format("Wait for resp~n"),

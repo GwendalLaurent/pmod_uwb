@@ -1,5 +1,5 @@
 -module(mock_mac).
--include("../src/mac_layer.hrl").
+-include("../src/mac_frame.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -10,13 +10,12 @@
 -export([reception/0]).
 % -export([reception/1]).
 
--export([start_link/2]).
--export([stop_link/0]).
-
 %%% gen_server callbacks
 -export([init/1]).
 -export([tx/4]).
--export([rx/1]).
+-export([rx/2]).
+-export([rx_on/2]).
+-export([rx_off/1]).
 -export([terminate/2]).
 
 
@@ -27,29 +26,31 @@ reception() ->
 send_data(FrameControl, MacHeader, Payload) ->
     mac_layer_behaviour:tx(FrameControl, MacHeader, Payload).
 
-% --- Start and stop the layer ------
-
-start_link(State, Params) ->
-    mac_layer_behaviour:start_link(?MODULE, State, Params).
-
-stop_link() ->
-    mac_layer_behaviour:stop_link().
-
 % --- Callbacks -----------
 init(Params) ->
     PhyModule = case Params of
               #{phy_layer := PHY} -> PHY;
               _ -> pmod_uwb
           end,
-    #{phy_layer => PhyModule}. 
+    #{phy_layer => PhyModule, rx => off}. 
 
 
-tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State#{ack_req => ?ENABLED, seqnum => Seqnum}};
-tx(State, FrameControl, MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State}.
+tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> 
+    Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
+    transmission(Frame),
+    _RxFrame = receive_ack(Seqnum),
+    {ok, State};
+tx(State, FrameControl, MacHeader, Payload) -> 
+    Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
+    {transmission(Frame), State}.
 
+rx(State, _) -> {ok, State, receive_()}.
 
-rx(#{ack_req := ?ENABLED, seqnum := Seqnum} = State) -> {ok, State#{ack_req => ?DISABLED}, receive_ack(Seqnum)};
-rx(State) -> {ok, State, receive_()}.
+rx_on(State, _) ->
+    {ok, State#{rx => on}}.
+
+rx_off(State) ->
+    {ok, State#{rx => off}}.
 
 terminate(_State, _Reason) -> ok.
 
@@ -66,8 +67,7 @@ receive_ack(Seqnum) ->
     MacHeader = #mac_header{seqnum = Seqnum},
     {FrameControl, MacHeader, <<>>}. 
 
-transmission(FrameControl, MacHeader, Payload) ->
-    Frame = mac_layer:mac_frame(FrameControl, MacHeader, Payload),
+transmission(Frame) when (byte_size(Frame)<125) ->
     io:format("~w~n", [Frame]),
     ok.
 

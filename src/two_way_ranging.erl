@@ -1,6 +1,6 @@
 -module(two_way_ranging).
 
--include("mac_layer.hrl").
+-include("mac_frame.hrl").
 
 -export([ds_initiator/0, ds_responder/0]).
 -export([ss_initiator/0, ss_responder/0]).

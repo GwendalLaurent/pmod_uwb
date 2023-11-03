@@ -12,94 +12,71 @@
 <h1>Module mac_layer</h1>
 <ul class="index"><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>
 
-<p><b>Behaviours:</b> <a href="mac_layer_behaviour.html"><tt>mac_layer_behaviour</tt></a>.</p>
+<p><b>Behaviours:</b> <a href="gen_mac_layer.html"><tt>gen_mac_layer</tt></a>.</p>
 
 <h2><a name="index">Function Index</a></h2>
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-2">init/2</a></td><td></td></tr>
-<tr><td valign="top"><a href="#mac_decode-1">mac_decode/1</a></td><td>decodes the MAC frame given in the arguments.</td></tr>
-<tr><td valign="top"><a href="#mac_frame-2">mac_frame/2</a></td><td>builds a mac frame without a payload.</td></tr>
-<tr><td valign="top"><a href="#mac_frame-3">mac_frame/3</a></td><td>builds a mac frame.</td></tr>
-<tr><td valign="top"><a href="#reception-0">reception/0</a></td><td>Receive a frame using the pmod_uwb and decode the frame.</td></tr>
-<tr><td valign="top"><a href="#rx-2">rx/2</a></td><td></td></tr>
-<tr><td valign="top"><a href="#send_data-3">send_data/3</a></td><td>Sends a MAC frame using the pmod_uwb without any options
- The 2 bytes CRC are automatically added at the end of the payload and
- must not be included in the Payload given in the arguments
--------------------------------------------------------------------------------.</td></tr>
-<tr><td valign="top"><a href="#start_link-2">start_link/2</a></td><td></td></tr>
-<tr><td valign="top"><a href="#stop_link-0">stop_link/0</a></td><td></td></tr>
-<tr><td valign="top"><a href="#tx-3">tx/3</a></td><td></td></tr>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-1">init/1</a></td><td>Initialize the MAC layer.</td></tr>
+<tr><td valign="top"><a href="#rx-2">rx/2</a></td><td>Performs the reception of a single packet.</td></tr>
+<tr><td valign="top"><a href="#rx_off-1">rx_off/1</a></td><td>Turns off the continuous reception.</td></tr>
+<tr><td valign="top"><a href="#rx_on-2">rx_on/2</a></td><td>Turns on the continuous reception.</td></tr>
+<tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td>clean up function to stop the mac layer.</td></tr>
+<tr><td valign="top"><a href="#tx-4">tx/4</a></td><td>transmits a frame using the physical layer.</td></tr>
 </table>
 
 <h2><a name="functions">Function Details</a></h2>
 
-<h3 class="function"><a name="init-2">init/2</a></h3>
+<h3 class="function"><a name="init-1">init/1</a></h3>
 <div class="spec">
-<p><tt>init(State::term(), Params::term()) -&gt; State::term()</tt><br></p>
+<p><tt>init(Params::term()) -&gt; State::term()</tt><br></p>
 <p> </p>
-</div>
+</div><p><p>Initialize the MAC layer</p>
 
-<h3 class="function"><a name="mac_decode-1">mac_decode/1</a></h3>
-<div class="spec">
-<p><tt>mac_decode(Data::bitstring()) -&gt; {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}</tt><br></p>
-<p> </p>
-<p>returns: A tuple containing the decoded frame control, the decoded mac header and the payload</p>
-</div><p>decodes the MAC frame given in the arguments</p>
+ <p>By default, it activate fthe frame filtering with auto-acknowledgment 
+It also set the frame waiting time out to MACACKWAITDURATION. However, the timeout isn't activated 
+If you want to use it, it has to be activated later on.</p>
 
-<h3 class="function"><a name="mac_frame-2">mac_frame/2</a></h3>
-<div class="spec">
-<p><tt>mac_frame(FrameControl::#frame_control{}, MacHeader::#mac_header{}) -&gt; bitstring()</tt><br></p>
-<p> </p>
-</div><p>Equivalent to <a href="#mac_frame-3"><tt>mac_frame(FrameControl, MacHeader, &lt;&lt;&gt;&gt;)</tt></a>.</p>
-<p>builds a mac frame without a payload</p>
-
-<h3 class="function"><a name="mac_frame-3">mac_frame/3</a></h3>
-<div class="spec">
-<p><tt>mac_frame(FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -&gt; bitstring()</tt><br></p>
-<p> </p>
-<p>returns: a MAC frame ready to be transmitted in a bitstring (not including the CRC automatically added by the DW1000)</p>
-</div><p>builds a mac frame</p>
-
-<h3 class="function"><a name="reception-0">reception/0</a></h3>
-<div class="spec">
-<p><tt>reception() -&gt; {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}</tt><br></p>
-<p> </p>
-<p>returns: the received mac frame decoded
--------------------------------------------------------------------------------</p>
-</div><p>Receive a frame using the pmod_uwb and decode the frame
-</p>
+ Params is a map that can contain different elements:
+ * <code>phy_layer</code>: specifying which driver it should use. By default it uses the driver of the pmod_uwb</p>
 
 <h3 class="function"><a name="rx-2">rx/2</a></h3>
 <div class="spec">
-<p><tt>rx(State::term(), From::term()) -&gt; {State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}}</tt><br></p>
+<p><tt>rx(State, RxEnabled) -&gt; any()</tt></p>
 <p> </p>
-</div>
+</div><p>Performs the reception of a single packet
+</p>
 
-<h3 class="function"><a name="send_data-3">send_data/3</a></h3>
+<h3 class="function"><a name="rx_off-1">rx_off/1</a></h3>
 <div class="spec">
-<p><tt>send_data(FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -&gt; ok</tt><br></p>
+<p><tt>rx_off(State) -&gt; any()</tt></p>
 <p> </p>
-</div><p>Sends a MAC frame using the pmod_uwb without any options
- The 2 bytes CRC are automatically added at the end of the payload and
- must not be included in the Payload given in the arguments
--------------------------------------------------------------------------------</p>
+</div><p>Turns off the continuous reception</p>
 
-<h3 class="function"><a name="start_link-2">start_link/2</a></h3>
+<h3 class="function"><a name="rx_on-2">rx_on/2</a></h3>
 <div class="spec">
-<p><tt>start_link(State::map(), Params::map()) -&gt; {ok, pid()}</tt><br></p>
+<p><tt>rx_on(State, Callback) -&gt; any()</tt></p>
 <p> </p>
-</div>
+</div><p><p>Turns on the continuous reception</p>
 
-<h3 class="function"><a name="stop_link-0">stop_link/0</a></h3>
-<div class="spec">
-<p><tt>stop_link() -&gt; any()</tt></p>
-<p> </p>
-</div>
+ When a packet is received, it will call the function specified in the parameter <code>Callback</code>
+ If the received packet is a data packet requesting an ACL and the autoack is turned on (by default)
+ the ACK is handled by the hardware before calling the callback
+</p>
 
-<h3 class="function"><a name="tx-3">tx/3</a></h3>
+<h3 class="function"><a name="terminate-2">terminate/2</a></h3>
 <div class="spec">
-<p><tt>tx(State::term(), From::term(), X3::{FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}) -&gt; State::term()</tt><br></p>
+<p><tt>terminate(State, Reason) -&gt; any()</tt></p>
 <p> </p>
-</div>
+</div><p>clean up function to stop the mac layer</p>
+
+<h3 class="function"><a name="tx-4">tx/4</a></h3>
+<div class="spec">
+<p><tt>tx(State, Framecontrol, Mac_header, Payload) -&gt; any()</tt></p>
+<p> </p>
+</div><p><p>transmits a frame using the physical layer</p>
+
+ If the frame control specify that an ACK is requested (AR=1), the function will wait for the ACK before returning
+ Moreover, if the ACK doesn't arrive before MACACKWAITDURATION, a retransmission is done
+ After MACMAXFRAMERETRIES retransmission, if the ACK doesn't arrive, the function returns the error <code>no_ack</code></p>
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
