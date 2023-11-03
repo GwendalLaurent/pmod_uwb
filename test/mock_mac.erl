@@ -36,10 +36,13 @@ init(Params) ->
 
 
 tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> 
-    % TODO use the mock phy as well for this one ?
-    transmission(FrameControl, MacHeader, Payload),
-    {ok, State, receive_ack(Seqnum)};
-tx(State, FrameControl, MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State}.
+    Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
+    transmission(Frame),
+    _RxFrame = receive_ack(Seqnum),
+    {ok, State};
+tx(State, FrameControl, MacHeader, Payload) -> 
+    Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
+    {transmission(Frame), State}.
 
 rx(State, _) -> {ok, State, receive_()}.
 
@@ -64,8 +67,7 @@ receive_ack(Seqnum) ->
     MacHeader = #mac_header{seqnum = Seqnum},
     {FrameControl, MacHeader, <<>>}. 
 
-transmission(FrameControl, MacHeader, Payload) ->
-    Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
+transmission(Frame) when (byte_size(Frame)<125) ->
     io:format("~w~n", [Frame]),
     ok.
 

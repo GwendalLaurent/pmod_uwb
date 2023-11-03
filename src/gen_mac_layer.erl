@@ -4,7 +4,7 @@
 -include("gen_mac_layer.hrl").
 
 -callback init(Params::term()) -> State :: term().
--callback tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {ok, State::term(), Frame::term()} | {error, State::term(), Error::tx_error()}.
+-callback tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {ok, State::term()} | {error, State::term(), Error::tx_error()}.
 -callback rx(State::term(), RxEnabled::binary()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 -callback rx_on(State::term(), Callback::function()) -> {ok, State::term()}.
 -callback rx_off(State::term()) -> {ok, State::term()}.
@@ -36,7 +36,6 @@ tx({Mod, Sub}, #frame_control{dest_addr_mode = ?NONE, src_addr_mode = ?NONE}, _,
 tx({Mod, Sub}, FrameControl, MacHeader, Payload) ->
     case Mod:tx(Sub, FrameControl, MacHeader, Payload) of
         {ok, Sub2} -> {ok, {Mod, Sub2}};
-        {ok, Sub2, _Frame} -> {ok, {Mod, Sub2}};
         {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
     end.
 

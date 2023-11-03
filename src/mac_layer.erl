@@ -50,13 +50,11 @@ tx(#{retries := ?MACMAXFRAMERETRIES} = State, Framecontrol, _, _) ->
     end;
 % @doc When the frame has AR=1, the Mac sublayer hes to wait until it receives the ACK back from the recipient before returning
 tx(#{phy_layer := PhyModule, retries := Retries} = State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) ->
-    % TODO
-    % Later: perform the retry as described in the standard and add the frame wait timeout
     case PhyModule:transmit(mac_frame:encode(FrameControl, MacHeader, Payload), #tx_opts{wait4resp = ?ENABLED}) of
         ok -> 
             case rx(State, true) of
                 {ok, NewState, {#frame_control{frame_type = ?FTYPE_ACK}, #mac_header{seqnum = Seqnum}, _}} -> {ok, NewState};
-            _ -> tx(State#{retries => Retries+1}, FrameControl, MacHeader, Payload)
+                _ -> tx(State#{retries => Retries+1}, FrameControl, MacHeader, Payload)
             end;
         Error -> {error, State, Error}
     end;
