@@ -1,10 +1,11 @@
 -module(gen_mac_layer).
 
--include("mac_layer.hrl").
+-include("mac_frame.hrl").
+-include("gen_mac_layer.hrl").
 
 -callback init(Params::term()) -> State :: term().
--callback tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
--callback rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
+-callback tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {ok, State::term(), Frame::term()} | {error, State::term(), Error::tx_error()}.
+-callback rx(State::term(), RxEnabled::binary()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 -callback rx_on(State::term(), Callback::function()) -> {ok, State::term()}.
 -callback rx_off(State::term()) -> {ok, State::term()}.
 -callback terminate(State :: term(), Reason :: term()) -> ok.
@@ -29,10 +30,13 @@ init(Module, Params) ->
 % @doc Transmission request to the MAC layer of a MAC frame
 % @end
 % ---------------------------------------------------------------------
--spec tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
+-spec tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::tx_error()}.
+tx({Mod, Sub}, #frame_control{dest_addr_mode = ?NONE, src_addr_mode = ?NONE}, _, _) ->
+    {error, {Mod, Sub}, invalid_address};
 tx({Mod, Sub}, FrameControl, MacHeader, Payload) ->
     case Mod:tx(Sub, FrameControl, MacHeader, Payload) of
         {ok, Sub2} -> {ok, {Mod, Sub2}};
+        {ok, Sub2, _Frame} -> {ok, {Mod, Sub2}};
         {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
     end.
 
@@ -42,7 +46,7 @@ tx({Mod, Sub}, FrameControl, MacHeader, Payload) ->
 % ---------------------------------------------------------------------
 -spec rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 rx({Mod, Sub}) ->
-    case Mod:rx(Sub) of
+    case Mod:rx(Sub, false) of
         {ok, Sub2, {FrameControl, MacHeader, Payload}} -> {ok, {Mod, Sub2}, {FrameControl, MacHeader, Payload}};
         {error, Sub2, Error} -> {error, {Mod, Sub2}, Error}
     end.

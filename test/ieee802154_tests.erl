@@ -2,7 +2,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--include("../src/mac_layer.hrl").
+-include("../src/mac_frame.hrl").
 -include("../src/ieee802154.hrl").
 
 %--- Setup ---------------------------------------------------------------------
@@ -15,9 +15,9 @@ teardown(_Mac) ->
 mac_test_() ->
     {setup, fun setup/0, fun teardown/1, 
         % Encode and decode test functions
-        [fun reception_/0,
-         fun transmission_/0,
-         fun ar_tx_/0,
+        [{"Reception", fun reception_/0},
+         {"Transmission" , fun transmission_/0},
+         {"Acknowledgment request", fun ar_tx_/0},
          {inorder, [fun rx_on_/0, fun rx_off_/0, fun rx_on_tx_on_/0, fun double_rx_on_/0]}
      ]}.
 
@@ -41,10 +41,7 @@ reception_() ->
 ar_tx_() ->
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED},
     MacHeader = #mac_header{seqnum = 54, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
-    ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, <<"Hello">>)),
-    AckFrameControl = #frame_control{frame_type = ?FTYPE_ACK},
-    AckMacHeader = #mac_header{seqnum = 54},
-    ?assertEqual({AckFrameControl, AckMacHeader, <<>>}, ieee802154:reception()).
+    ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, <<"Hello">>)).
 
 rx_on_() ->
     ?assertEqual(ok, ieee802154:rx_on()),

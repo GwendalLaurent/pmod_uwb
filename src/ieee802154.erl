@@ -4,7 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -include("ieee802154.hrl").
--include("mac_layer.hrl").
+-include("mac_frame.hrl").
 
 -export([start_link/1]).
 -export([stop_link/0]).
@@ -133,7 +133,7 @@ tx(enter, _OldState, Data) ->
 tx(_EventType, {tx, OldState, FrameControl, MacHeader, Payload, From}, #{mac_layer := MacLayerState} = Data) -> 
     case gen_mac_layer:tx(MacLayerState, FrameControl, MacHeader, Payload) of
         {ok, NewMacState} -> {next_state, OldState, Data#{mac_layer => NewMacState}, [{reply, From, ok}]};
-        {error, Err, NewMacState} -> {next_state, OldState, Data#{mac_layer => NewMacState}, [{reply, From, {error, Err}}]} 
+        {error, NewMacState, Err} -> {next_state, OldState, Data#{mac_layer => NewMacState}, [{reply, From, {error, Err}}]} 
     end.
 
 terminate(Reason, _State, #{mac_layer := MacLayerState}) ->

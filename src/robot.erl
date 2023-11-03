@@ -2,7 +2,7 @@
 
 -behaviour(application).
 
--include("mac_layer.hrl").
+-include("mac_frame.hrl").
 -include("ieee802154.hrl").
 
 -export([tx/0]).
@@ -16,25 +16,23 @@
 
 % Sends/receive only 1 frame
 tx() ->
+    % FrameControl = #frame_control{ack_req = ?ENABLED},
     FrameControl = #frame_control{},
     MacHeader = #mac_header{},
     ieee802154:transmition(FrameControl, MacHeader, <<"Test">>).
 
-rx_callback({FrameControl, MacHeader, Payload}) ->
-    io:format("Received frame with seqnum: ~w - Payload: ~w ~n", [MacHeader#mac_header.seqnum, Payload]),
-    Seqnum = MacHeader#mac_header.seqnum,
-    case FrameControl of
-        #frame_control{ack_req = ?ENABLED} -> ieee802154:transmition(#frame_control{frame_type = ?FTYPE_ACK}, #mac_header{seqnum = Seqnum}, <<>>);
-        _ -> ok
-    end.
+rx_callback({_FrameControl, MacHeader, Payload}) ->
+    io:format("Received frame with seqnum: ~w - Payload: ~w ~n", [MacHeader#mac_header.seqnum, Payload]).
 
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().
 
 tx(0) -> ok;
 tx(N) ->
-    ieee802154:transmition(#frame_control{}, #mac_header{seqnum = N}, <<"Hello TX">>),
-    tx(N-1).
+    case ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>) of
+        {error, Error} -> error(Error);
+        _ -> tx(N-1)
+    end.
 
 start(_Type, _Args) -> 
     {ok, Supervisor} = robot_sup:start_link(),

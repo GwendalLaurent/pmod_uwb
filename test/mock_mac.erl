@@ -1,5 +1,5 @@
 -module(mock_mac).
--include("../src/mac_layer.hrl").
+-include("../src/mac_frame.hrl").
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -13,7 +13,7 @@
 %%% gen_server callbacks
 -export([init/1]).
 -export([tx/4]).
--export([rx/1]).
+-export([rx/2]).
 -export([rx_on/2]).
 -export([rx_off/1]).
 -export([terminate/2]).
@@ -35,12 +35,13 @@ init(Params) ->
     #{phy_layer => PhyModule, rx => off}. 
 
 
-tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State#{ack_req => ?ENABLED, seqnum => Seqnum}};
+tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> 
+    % TODO use the mock phy as well for this one ?
+    transmission(FrameControl, MacHeader, Payload),
+    {ok, State, receive_ack(Seqnum)};
 tx(State, FrameControl, MacHeader, Payload) -> {transmission(FrameControl, MacHeader, Payload), State}.
 
-
-rx(#{ack_req := ?ENABLED, seqnum := Seqnum} = State) -> {ok, State#{ack_req => ?DISABLED}, receive_ack(Seqnum)};
-rx(State) -> {ok, State, receive_()}.
+rx(State, _) -> {ok, State, receive_()}.
 
 rx_on(State, _) ->
     {ok, State#{rx => on}}.
@@ -64,7 +65,7 @@ receive_ack(Seqnum) ->
     {FrameControl, MacHeader, <<>>}. 
 
 transmission(FrameControl, MacHeader, Payload) ->
-    Frame = mac_layer:mac_frame(FrameControl, MacHeader, Payload),
+    Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
     io:format("~w~n", [Frame]),
     ok.
 

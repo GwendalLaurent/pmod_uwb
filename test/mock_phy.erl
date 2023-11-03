@@ -5,7 +5,9 @@
 -export([stop_link/0]).
 
 -export([transmit/2]).
--export([reception/0]).
+-export([reception/1]).
+
+-export([write/2]).
 
 %%% gen_server callbacks
 -export([init/1]).
@@ -25,8 +27,11 @@ stop_link() ->
 transmit(Data, Options) ->
     gen_server:call(?NAME, {transmit, Data, Options}).
 
-reception() ->
+reception(_) ->
     gen_server:call(?NAME, {reception}).
+
+write(Reg, Val) ->
+    gen_server:call(?NAME, {write, Reg, Val}).
 
 %%% gen_server callbacks
 init({_Params, State}) ->
@@ -45,6 +50,7 @@ handle_call({reception}, _From, loss) ->
         1 -> {reply, rx_faulty(), loss};
         2 -> {reply, rx(), loss}
     end;
+handle_call({write, _Reg, _Val}, _From, State) -> {reply, ok, State};
 handle_call(_Request, _From, _State) -> error(not_implemented).
 
 handle_cast(_Request, _State) ->
