@@ -3,7 +3,6 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -include("../src/mac_frame.hrl").
--include("../src/ieee802154.hrl").
 
 %--- Setup ---------------------------------------------------------------------
 

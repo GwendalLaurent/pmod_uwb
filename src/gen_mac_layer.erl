@@ -53,7 +53,7 @@ rx({Mod, Sub}) ->
 
 % ---------------------------------------------------------------------
 % @doc Turns on the continuous reception
-% It can be turned of using `turn_off_rx/1`
+% It can be turned of using `turn_off_rx/1'
 % Note: if the receiption is already enable, nothing happens
 % @param State: The state of the Mac layer
 % @param Callback: the callback function which is going to be called when a frame is received.
