@@ -81,7 +81,7 @@ rx_off() ->
 % --- gen_statem callbacks --------------------------------------------------------------
 
 init(Params) ->
-    MacState = gen_mac_layer:init(Params#ieee_parameters.mac_layer, Params#ieee_parameters.mac_parameters),
+    MacState = gen_mac_layer:start(Params#ieee_parameters.mac_layer, Params#ieee_parameters.mac_parameters),
     Data = #{cache => #{tx => [], rx => []}, mac_layer => MacState, input_callback => Params#ieee_parameters.input_callback},
     {ok, idle, Data}.
 

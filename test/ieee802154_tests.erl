@@ -30,6 +30,7 @@ transmission_() ->
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
     Payload = <<"Hello">>,
     ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, Payload)),
+    ieee802154:transmition(FrameControl, MacHeader, Payload),
     ?assertMatch({idle, _}, sys:get_state(ieee802154)).
 
 reception_() ->

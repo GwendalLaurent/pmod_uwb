@@ -13,7 +13,7 @@
 %%% gen_server callbacks
 -export([init/1]).
 -export([tx/4]).
--export([rx/2]).
+-export([rx/1]).
 -export([rx_on/2]).
 -export([rx_off/1]).
 -export([terminate/2]).
@@ -44,7 +44,7 @@ tx(State, FrameControl, MacHeader, Payload) ->
     Frame = mac_frame:encode(FrameControl, MacHeader, Payload),
     {transmission(Frame), State}.
 
-rx(State, _) -> {ok, State, receive_()}.
+rx(State) -> {ok, State, receive_()}.
 
 rx_on(State, _) ->
     {ok, State#{rx => on}}.

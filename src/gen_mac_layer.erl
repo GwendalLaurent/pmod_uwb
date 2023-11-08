@@ -3,14 +3,14 @@
 -include("mac_frame.hrl").
 -include("gen_mac_layer.hrl").
 
--callback init(Params::term()) -> State :: term().
+-callback init(Params::list()) -> State :: term().
 -callback tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {ok, State::term()} | {error, State::term(), Error::tx_error()}.
--callback rx(State::term(), RxEnabled::binary()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
+-callback rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 -callback rx_on(State::term(), Callback::function()) -> {ok, State::term()}.
 -callback rx_off(State::term()) -> {ok, State::term()}.
 -callback terminate(State :: term(), Reason :: term()) -> ok.
 
--export([init/2]).
+-export([start/2]).
 -export([tx/4]).
 -export([rx/1]).
 -export([turn_on_rx/2]).
@@ -20,10 +20,11 @@
 % ---------------------------------------------------------------------
 % @doc Initialize the MAC layer using the Module given in the arguments
 % Module has to implement the gen_mac_layer behaviour
+% The parameters are encapsulated in a list. This avoids having to specify the whole stack when using a mockup
 % @end
 % ---------------------------------------------------------------------
--spec init(Module::module(), Params::map()) -> State::term().
-init(Module, Params) ->
+-spec start(Module::module(), Params::list()) -> State::term().
+start(Module, Params) ->
     {Module, Module:init(Params)}.
 
 % ---------------------------------------------------------------------
@@ -45,7 +46,7 @@ tx({Mod, Sub}, FrameControl, MacHeader, Payload) ->
 % ---------------------------------------------------------------------
 -spec rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 rx({Mod, Sub}) ->
-    case Mod:rx(Sub, false) of
+    case Mod:rx(Sub) of
         {ok, Sub2, {FrameControl, MacHeader, Payload}} -> {ok, {Mod, Sub2}, {FrameControl, MacHeader, Payload}};
         {error, Sub2, Error} -> {error, {Mod, Sub2}, Error}
     end.

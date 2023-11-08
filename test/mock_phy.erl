@@ -5,7 +5,7 @@
 -export([stop_link/0]).
 
 -export([transmit/2]).
--export([reception/1]).
+-export([reception/0]).
 
 -export([write/2]).
 
@@ -27,7 +27,7 @@ stop_link() ->
 transmit(Data, Options) ->
     gen_server:call(?NAME, {transmit, Data, Options}).
 
-reception(_) ->
+reception() ->
     gen_server:call(?NAME, {reception}).
 
 write(Reg, Val) ->

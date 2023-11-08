@@ -263,7 +263,7 @@ softreset() ->
 
 clear_rx_flags() -> 
     write(sys_status, #{rxsfdto => 2#1, rxpto => 2#1, rxrfto => 2#1, rxrfsl => 2#1, rxfce => 2#1, rxphe => 2#1, rxprd => 2#1, rxdsfdd => 2#1, rxphd => 2#1, rxdfr => 2#1, rxfcg => 2#1}).
-    
+
 %--- Callbacks -----------------------------------------------------------------
 
 %% @private
@@ -794,7 +794,7 @@ reg(encode, tx_antd, Val) ->
     >>);
 reg(decode, sys_state, Resp) ->
     <<
-        _:8, PMSC_STATE:8, _:3, RX_STATE:5, _:4, TX_STATE:4
+        _:8, _:4,  PMSC_STATE:4, _:3, RX_STATE:5, _:4, TX_STATE:4
     >> = reverse(Resp),
     #{
         pmsc_state => PMSC_STATE, rx_state => RX_STATE, tx_state => TX_STATE
