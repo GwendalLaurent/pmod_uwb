@@ -92,11 +92,10 @@ turn_off_rx_loop(PhyMod, LoopPid, Reason) ->
     PhyMod:disable_rx(),
     PhyMod:write(sys_cfg, #{rxwtoe => 1}).
 
-suspend_rx_loop(_, undefined) -> undefined;
 suspend_rx_loop(PhyMod, LoopPid) ->
     turn_off_rx_loop(PhyMod, LoopPid, shutdown).
 
-resume_rx_loop(_, undefined, _, _, _) -> ok;
+-spec resume_rx_loop(PhyMod::module(), LoopPid::pid(), SNIFF_ONT::integer(), SNIFF_OFFT::integer(), Callback::function()) -> pid().
 resume_rx_loop(PhyMod, _, SNIFF_ONT, SNIFF_OFFT, Callback) -> turn_on_rx_loop(PhyMod, SNIFF_ONT, SNIFF_OFFT, Callback). 
 
 % @private

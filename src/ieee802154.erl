@@ -80,7 +80,8 @@ init(Params) ->
     {ok, idle, Data}.
 
 callback_mode() ->
-    [state_enter, state_functions].
+    [state_functions].
+    % [state_enter, state_functions].
 
 terminate(Reason, _State, #{mac_layer := MacLayerState}) ->
     gen_mac_layer:stop(MacLayerState, Reason).
@@ -89,11 +90,9 @@ code_change(_, _, _, _) ->
     error(not_implemented).
 
 %--- Idle State
-idle(enter, _OldState, Data) ->
-    {next_state, idle, Data};
-
-idle({call, From}, rx_on, Data) -> 
-    {next_state, rx, Data, {reply, From, ok}}; 
+idle({call, From}, rx_on, #{mac_layer := MacState, input_callback := Callback} = Data) -> 
+    {ok, NewMacState} = gen_mac_layer:turn_on_rx(MacState, Callback),
+    {next_state, rx, Data#{mac_layer => NewMacState}, {reply, From, ok}}; 
 
 idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data) -> 
     {next_state, tx, Data, [{next_event, internal, {tx, idle, FrameControl, FrameHeader, Payload, From}}]};
@@ -105,9 +104,8 @@ idle({call, From}, rx, #{mac_layer := MacState} = Data) -> % simple RX doesn't g
     end.
 
 %---  RX State 
-rx(enter, _OldState, #{mac_layer := MacState, input_callback := Callback} = Data) ->
-    {ok, NewMacState} = gen_mac_layer:turn_on_rx(MacState, Callback),
-    {next_state, rx, Data#{mac_layer => NewMacState}};
+rx(enter, _OldState, Data) ->
+    {next_state, rx, Data};
 
 rx({call, From}, rx_on, Data) -> 
     {keep_state, Data, {reply, From, ok}};
@@ -116,10 +114,10 @@ rx({call, From}, rx_off, #{mac_layer := MacState} = Data) ->
     {ok, NewMacState} = gen_mac_layer:turn_off_rx(MacState), 
     {next_state, idle, Data#{mac_layer => NewMacState}, {reply, From, ok}};
 
-rx({call, From}, {tx, FrameControl, FrameHeader, Payload}, #{mac_layer := MacState} = Data)->
+rx({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data)->
     % {ok, NewMacState} = gen_mac_layer:turn_off_rx(MacState),
     % {next_state, tx, Data#{mac_layer => NewMacState}, [{next_event, internal, {tx, rx, FrameControl, FrameHeader, Payload, From}}]}; 
-    {next_state, tx, Data#{mac_layer => MacState}, [{next_event, internal, {tx, rx, FrameControl, FrameHeader, Payload, From}}]}; 
+    {next_state, tx, Data, [{next_event, internal, {tx, rx, FrameControl, FrameHeader, Payload, From}}]}; 
 
 rx(_EventType, {rx, From}, #{mac_layer := MacState} = Data) ->
     case gen_mac_layer:rx(MacState) of
