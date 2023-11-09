@@ -38,6 +38,11 @@ off(#state{phy_layer = PhyMod, loop_pid = LoopPid} = State) ->
     {ok, State#state{loop_pid = undefined}}.
 
 -spec tx(State::term(), Frame::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
+tx(#state{phy_layer = PhyMod, loop_pid = undefined} = State, Frame) ->
+    case tx_(PhyMod, Frame) of
+        ok -> {ok, State};
+        {error, Error} -> {error, State, Error}
+    end;
 tx(#state{phy_layer = PhyMod, loop_pid = LoopPid, callback = Callback, sniff_ont = SNIFF_ONT, sniff_offt = SNIFF_OFFT} = State, Frame) ->
     suspend_rx_loop(PhyMod, LoopPid),
     TxStatus = tx_(PhyMod, Frame),

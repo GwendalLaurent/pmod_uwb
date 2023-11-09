@@ -24,4 +24,6 @@ stack_test(_Config) ->
     ct:pal("~w~n", [sys:get_state(ieee802154)]),
     ieee802154:transmition(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
     ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>),
-    ieee802154:rx_off().
+    ieee802154:rx_off(),
+    ieee802154:transmition(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
+    ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>).
