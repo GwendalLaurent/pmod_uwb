@@ -2,10 +2,8 @@
 
 -behaviour(gen_duty_cycle).
 
--include("gen_mac_layer.hrl").
--include("mac_frame.hrl").
+% gen_duty_cycle callbacks
 
-%%% gen_duty_cycle callbacks
 -export([init/1]).
 -export([on/2]).
 -export([off/1]).
@@ -13,12 +11,21 @@
 -export([rx/1]).
 -export([terminate/2]).
 
--record(state, {sniff_ont, sniff_offt, phy_layer, loop_pid, callback}).
+% Include
+
+-include("gen_mac_layer.hrl").
+-include("mac_frame.hrl").
 
 %% @doc 
-%% When we use the non beacon network, we use the sniff mode of the pmod
+%% The module implementing this behaviour is responsible for the duty cycling of the stack. This includes:
+%% <li> IEEE 802.15.4 duty cycling: Beacon enabled network, non-beacon enabled network </li>
+%% <li> pmod uwb duty cycling: low power listening, sniff mode </li>
+%% @end
 
-%%% gen_duty_cycle callbacks
+%--- Records ----------------------------------------------------------
+-record(state, {sniff_ont, sniff_offt, phy_layer, loop_pid, callback}).
+
+%--- gen_duty_cycle callbacks -------------------------------------------
 init(PhyMod) ->
     #state{sniff_ont = 3, sniff_offt = 4, phy_layer = PhyMod, loop_pid = undefined, callback = undefined}.
 

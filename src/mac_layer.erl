@@ -25,7 +25,6 @@
 % Params is a map that can contain different elements:
 % * `phy_layer': specifying which driver it should use. By default it uses the driver of the pmod_uwb
 % @end
--spec init(Params::list()) -> {ok, State :: term()}.
 init([PhyMod, DutyCycleMod]) ->
     PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
     PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1}),

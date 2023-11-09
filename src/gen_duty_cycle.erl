@@ -1,3 +1,20 @@
+% @doc This module defines a generic behaviour for duty cycling on the IEEE 802.15.4
+%
+% The module implementing the behaviour will be responsible to manage the duty cylcing of the IEEE 802.15.4 stack (not the power optimization of the pmod)
+% For example, the module implementing this behaviour for a beacon enabled network will have the task to manage the CFP, the CAP and the beacon reception
+% When an application will request a transmission the module has to suspend the rx before transmitting
+% At the transmission of a frame, the module will have the task to check if there is enough time to transmit the frame (e.g. before the next beacon)
+% At the transmisson of a data frame with AR=1 the module has to manage the retransmission of the frame if the ACK isn't correctly received
+%   This is because this module will be responsible to check if the retransmission can be done (no beacons or not a CAP) and the reception can't be resumed between retransmission (both are responsabilities of this module) 
+%
+% Beacon enabled
+% No transmission during beacon
+% TX during CAP
+% No TX during CFP unless a slot is attributed to the node
+% 
+% Manage the RX loop (suspend/resume)
+%
+% @end
 -module(gen_duty_cycle).
 
 -callback init(PhyModule::module()) -> State::term().
@@ -15,24 +32,6 @@
 -export([rx_request/1]).
 -export([stop/2]).
 
-% @doc This module defines a generic behaviour for duty cycling on the IEEE 802.15.4
-%
-% @TODO complete documentation
-% The module implementing the behaviour will be responsible to manage the duty cylcing of the IEEE 802.15.4 stack (not the power optimization of the pmod)
-% For example, the module implementing this behaviour for a beacon enabled network will have the task to manage the CFP, the CAP and the beacon reception
-% When an application will request a transmission the module has to suspend the rx before transmitting
-% At the transmission of a frame, the module will have the task to check if there is enough time to transmit the frame (e.g. before the next beacon)
-% At the transmisson of a data frame with AR=1 the module has to manage the retransmission of the frame if the ACK isn't correctly received
-%   This is because this module will be responsible to check if the retransmission can be done (no beacons or not a CAP) and the reception can't be resumed between retransmission (both are responsabilities of this module) 
-%
-% Beacon enabled
-% No transmission during beacon
-% TX during CAP
-% No TX during CFP unless a slot is attributed to the node
-% 
-% Manage the RX loop (suspend/resume)
-%
-% @end
 
 % @doc initialize the duty cycle module
 % @end

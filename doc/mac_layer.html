@@ -16,7 +16,7 @@
 
 <h2><a name="index">Function Index</a></h2>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-1">init/1</a></td><td>Initialize the MAC layer.</td></tr>
-<tr><td valign="top"><a href="#rx-2">rx/2</a></td><td>Performs the reception of a single packet.</td></tr>
+<tr><td valign="top"><a href="#rx-1">rx/1</a></td><td>Performs the reception of a single packet.</td></tr>
 <tr><td valign="top"><a href="#rx_off-1">rx_off/1</a></td><td>Turns off the continuous reception.</td></tr>
 <tr><td valign="top"><a href="#rx_on-2">rx_on/2</a></td><td>Turns on the continuous reception.</td></tr>
 <tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td>clean up function to stop the mac layer.</td></tr>
@@ -27,7 +27,7 @@
 
 <h3 class="function"><a name="init-1">init/1</a></h3>
 <div class="spec">
-<p><tt>init(Params::term()) -&gt; State::term()</tt><br></p>
+<p><tt>init(X1) -&gt; any()</tt></p>
 <p> </p>
 </div><p><p>Initialize the MAC layer</p>
 
@@ -38,9 +38,9 @@ If you want to use it, it has to be activated later on.</p>
  Params is a map that can contain different elements:
  * <code>phy_layer</code>: specifying which driver it should use. By default it uses the driver of the pmod_uwb</p>
 
-<h3 class="function"><a name="rx-2">rx/2</a></h3>
+<h3 class="function"><a name="rx-1">rx/1</a></h3>
 <div class="spec">
-<p><tt>rx(State, RxEnabled) -&gt; any()</tt></p>
+<p><tt>rx(State) -&gt; any()</tt></p>
 <p> </p>
 </div><p>Performs the reception of a single packet
 </p>
@@ -64,19 +64,15 @@ If you want to use it, it has to be activated later on.</p>
 
 <h3 class="function"><a name="terminate-2">terminate/2</a></h3>
 <div class="spec">
-<p><tt>terminate(State, Reason) -&gt; any()</tt></p>
+<p><tt>terminate(X1, Reason) -&gt; any()</tt></p>
 <p> </p>
 </div><p>clean up function to stop the mac layer</p>
 
 <h3 class="function"><a name="tx-4">tx/4</a></h3>
 <div class="spec">
-<p><tt>tx(State, Framecontrol, Mac_header, Payload) -&gt; any()</tt></p>
+<p><tt>tx(State, FrameControl, MacHeader, Payload) -&gt; any()</tt></p>
 <p> </p>
-</div><p><p>transmits a frame using the physical layer</p>
-
- If the frame control specify that an ACK is requested (AR=1), the function will wait for the ACK before returning
- Moreover, if the ACK doesn't arrive before MACACKWAITDURATION, a retransmission is done
- After MACMAXFRAMERETRIES retransmission, if the ACK doesn't arrive, the function returns the error <code>no_ack</code></p>
+</div><p>transmits a frame using the physical layer</p>
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
