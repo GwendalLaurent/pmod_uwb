@@ -27,7 +27,7 @@ mac_encode_decode() ->
 
 setup_perfect() ->
     mock_phy:start_link(spi2, {perfect, #{}}),
-    gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
+    gen_mac_layer:start(mac_layer, [mock_phy, duty_cycle_non_beacon]).
 
 teardown(State) ->
     gen_mac_layer:stop(State, exit),
@@ -41,7 +41,7 @@ mac_perfect_phy() ->
 
 mac_faulty_setup() ->
     mock_phy:start_link(spi2, {faulty, #{}}),
-    gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
+    gen_mac_layer:start(mac_layer, [mock_phy, duty_cycle_non_beacon]).
 
 mac_faulty_phy() ->
     {setup, fun mac_faulty_setup/0, fun teardown/1, {with, [
@@ -49,7 +49,7 @@ mac_faulty_phy() ->
 
 mac_lossy_setup() ->
     mock_phy:start_link(spi2, {lossy, #{}}),
-    gen_mac_layer:init(mac_layer, #{phy_layer => mock_phy}).
+    gen_mac_layer:start(mac_layer, [mock_phy, duty_cycle_non_beacon]).
 
 mac_lossy_phy() -> % Note: Not sure if I should keep that kind of tests
     {setup, fun mac_lossy_setup/0, fun teardown/1, {with, [

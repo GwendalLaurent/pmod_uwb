@@ -29,10 +29,8 @@ rx_off() -> ieee802154:rx_off().
 
 tx(0) -> ok;
 tx(N) ->
-    case ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>) of
-        {error, Error} -> error(Error);
-        _ -> tx(N-1)
-    end.
+    ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>),
+    tx(N-1).
 
 start(_Type, _Args) -> 
     {ok, Supervisor} = robot_sup:start_link(),
