@@ -108,7 +108,7 @@ set_mac_short_address(Value) ->
 get_pan_id() ->
     gen_statem:call(?MODULE, {get, mac_pan_id}).
 
-%% @doc Sets the mac short address of the device and update the PIB
+%% @doc Sets the PAN ID of the device and update the PIB
 %% The Value is a bitstring with a size of 16 bits
 -spec set_pan_id(bitstring()) -> ok.
 set_pan_id(Value) ->

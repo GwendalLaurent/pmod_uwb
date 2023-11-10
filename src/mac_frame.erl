@@ -79,20 +79,21 @@ decode(Data) ->
 % @doc Decodes the remaining sequence of bit present in the payload after the seqnum
 % @end
 %-------------------------------------------------------------------------------
+-spec decode_rest(FrameControl :: frame_control(), Seqnum::integer(), Rest::bitstring()) -> {FrameControl::frame_control(), MacHeader::mac_header(), Payload::bitstring()}.  
 decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) ->
     {FrameControl, #mac_header{seqnum = Seqnum}, <<>>};
 decode_rest(FrameControl, Seqnum, Rest) ->
     [DestPan_, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl)),
     DestPan = case {DestPan_, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.frame_type} of 
                   {<<>>, ?ENABLED, _} -> SrcPan_; % Can always deduce if the compression is enabled
-                  {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression isn't enabled and ACK => can't deduce
+                  % {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression isn't enabled and ACK => can't deduce
                   {<<>>, ?DISABLED, ?FTYPE_BEACON} -> <<>>; % if compression isn't enabled and BEACON => can't deduce
                   {<<>>, ?DISABLED, _} -> SrcPan_; % Other wise destination is PAN coord with same PANID as SRC
                   {_, _, _} -> DestPan_
               end,
     SrcPan = case {SrcPan_, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.frame_type} of
                  {<<>>, ?ENABLED, _} -> DestPan;
-                 {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression is disabled and frame type is an ACK => can't deduce (e.g. ACK comming from outside the PAN
+                 % {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression is disabled and frame type is an ACK => can't deduce (e.g. ACK comming from outside the PAN
                  {<<>>, ?DISABLED, _} -> DestPan;
                  {_, _, _} -> SrcPan_
              end,
@@ -156,7 +157,7 @@ build_frame_control(FrameControl) ->
 % @doc Decode the frame control given in a bitstring form in the parameters
 % @end
 %-------------------------------------------------------------------------------
--spec decode_frame_control(FC :: bitstring) -> #frame_control{}.
+-spec decode_frame_control(FC :: bitstring()) -> frame_control().
 decode_frame_control(FC) -> 
     <<_:1, PanIdCompr:1, AckReq:1, FramePending:1, SecEn:1, FrameType:3, SrcAddrMode:2, FrameVersion:2, DestAddrMode:2, _:2>> = FC,
     #frame_control{frame_type = FrameType, sec_en = SecEn, frame_pending = FramePending, ack_req = AckReq, pan_id_compr = PanIdCompr, dest_addr_mode = DestAddrMode, frame_version = FrameVersion, src_addr_mode = SrcAddrMode}.

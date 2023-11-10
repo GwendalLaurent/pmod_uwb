@@ -319,6 +319,7 @@ verify_id(Bus) ->
 %% @private
 %% Performs a softreset on the pmod
 %% ---------------------------------------------------------------------------------------
+-spec softreset(Bus::grisp_spi:ref()) -> ok.
 softreset(Bus) ->
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
@@ -328,6 +329,7 @@ softreset(Bus) ->
 %% @private
 %% Writes the default values described in section 2.5.5 of the user manual
 %% ---------------------------------------------------------------------------------------
+-spec write_default_values(Bus::grisp_spi:ref()) -> ok.
 write_default_values(Bus) ->
     write_reg(Bus, lde_if, #{lde_cfg1 => #{ntm => 16#D}, lde_cfg2 => 16#1607}),
     write_reg(Bus, agc_ctrl, #{agc_tune1 => 16#8870, agc_tune2 => 16#2502A907}),
@@ -510,7 +512,7 @@ read_rx_data(Bus, Length) ->
 %% ---------------------------------------------------------------------------------------
 %% @doc used to write the values in the map given in the Value argument
 %% ---------------------------------------------------------------------------------------
--spec write_reg(Bus::map(), RegFileID::regFileID(), Value::map()) -> ok | {error, any()}.
+-spec write_reg(Bus::grisp_spi:ref(), RegFileID::regFileID(), Value::map()) -> ok | {error, any()}.
 % Write each sub-register one by one.
 % If the user tries to write in a read-only sub-register, an error is thrown 
 write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
@@ -554,6 +556,7 @@ write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
 %% The transmission on the MISO line is done byte by byte starting from the lowest rank byte to the highest rank
 %% Example: dev_id value is 0xDECA0130 but 0x3001CADE is transmitted over the MISO line
 %% ---------------------------------------------------------------------------------------
+-spec reg(encode|decode, Register::regFileID(), bitstring()|map()) -> bitstring()|map().
 reg(encode, SubRegister, Value) when ?READ_ONLY_SUB_REG(SubRegister) -> error({writing_read_only_sub_register, SubRegister, Value});
 reg(decode, dev_id, Resp) -> 
     <<

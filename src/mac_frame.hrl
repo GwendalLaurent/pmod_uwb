@@ -14,6 +14,8 @@
 -type addr_mode() :: ?NONE | ?SHORT_ADDR | ?EXTENDED.
 -type addr() :: bitstring().
 
+-export_type([frame_control/0, mac_header/0]).
+
 % @doc frame control of a MAC header for IEEE 802.15.4
 -record(frame_control, {frame_type = ?FTYPE_DATA :: ftype(),
                         sec_en = ?DISABLED :: flag(),
@@ -24,6 +26,8 @@
                         frame_version = 2#00 :: integer(),
                         src_addr_mode = ?SHORT_ADDR :: addr_mode()}).
 
+-opaque frame_control() :: #frame_control{}.
+
 % @doc MAC header for IEEE 802.15.4
 % Doesn't include the frame control nor a potential auxiliary security header
 -record(mac_header, {seqnum = 0 :: integer(),
@@ -31,3 +35,5 @@
                      dest_addr = <<16#FFFF:16>> :: addr(),
                      src_pan = <<16#FFFF:16>> :: addr(),
                      src_addr = <<16#FFFF:16>> :: addr()}).
+
+-opaque mac_header() :: #mac_header{}.
