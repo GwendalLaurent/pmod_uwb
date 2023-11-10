@@ -141,15 +141,15 @@
  
   <h4><a name="Examples">Examples</a></h4>
   To write in a simple register file (i.e. a register without any sub-register):
-  <pre>  1&gt; pmod_uwb:write(eui, #{eui =&gt; 16#AAAAAABBBBBBBBBB}).
+  <pre>  1&gt; pmod_uwb:write(eui, #{eui =&gt; &lt;&lt;16#AAAAAABBBBBBBBBB&gt;&gt;}).
   ok</pre>
   To write in one sub-register of a register file:
-  <pre>  2&gt; pmod_uwb:write(panadr, #{pan_id =&gt; 16#AAAA}).
+  <pre>  2&gt; pmod_uwb:write(panadr, #{pan_id =&gt; &lt;&lt;16#AAAA&gt;&gt;}).
   ok</pre><p>  
 The previous code will only change the values inside the sub-register PAN_ID</p>
  
   To write in multiple sub-register of a register file in the same burst:
-  <pre>  3&gt; pmod_uwb:write(panadr, #{pan_id =&gt; 16#AAAA, short_addr =&gt; 16#BBBB}).
+  <pre>  3&gt; pmod_uwb:write(panadr, #{pan_id =&gt; &lt;&lt;16#AAAA&gt;&gt;, short_addr =&gt; &lt;&lt;16#BBBB&gt;&gt;}).
   ok</pre>
   Some sub-registers have their own fields. For example to set the value of the DIS_AM field in the sub-register AGC_CTRL1 of the register file AGC_CTRL:
   <pre>  4&gt; pmod_uwb:write(agc_ctrl, #{agc_ctrl1 =&gt; #{dis_am =&gt; 2#0}}).</pre></p>

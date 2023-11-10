@@ -16,6 +16,8 @@
 -export([rx/1]).
 -export([rx_on/2]).
 -export([rx_off/1]).
+-export([set/3]).
+-export([get/2]).
 -export([terminate/2]).
 
 
@@ -32,7 +34,7 @@ init(Params) ->
               #{phy_layer := PHY} -> PHY;
               _ -> pmod_uwb
           end,
-    #{phy_layer => PhyModule, rx => off}. 
+    #{phy_layer => PhyModule, rx => off, pib => #{mac_pan_id => <<16#FFFF:16>>, mac_extended_address => <<16#FFFFFFFF:64>>, mac_short_address => <<16#FFFF:16>>}}. 
 
 
 tx(State, #frame_control{ack_req = ?ENABLED} = FrameControl, #mac_header{seqnum = Seqnum} = MacHeader, Payload) -> 
@@ -51,6 +53,18 @@ rx_on(State, _) ->
 
 rx_off(State) ->
     {ok, State#{rx => off}}.
+
+get(#{pib := PIB} = State, Attribute) -> 
+    case maps:get(Attribute, PIB) of
+        {badkey, _} -> {error, State, unsupported_attribute};
+        Val -> {ok, State, Val}
+    end.
+
+set(#{pib := PIB} = State, Attribute, Value) ->
+    case maps:update(Attribute, Value, PIB) of
+        {badkey, _} -> {error, State, unsupported_attribute};
+        NewPIB -> {ok, State#{pib => NewPIB}}
+    end.
 
 terminate(_State, _Reason) -> ok.
 

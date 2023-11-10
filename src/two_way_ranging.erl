@@ -20,6 +20,9 @@
 -define(SS_TX_ANTD, 23500).
 -define(SS_RX_ANTD, 23500).
 
+%--- Dialyzer ---------------------------------------------------------------------------------------
+-dialyzer({nowarn_function, [ds_initiator_protocol/0, ds_responder_protocol/0, ss_initiator_loop/0, ss_responder_loop/3]}).
+
 %--- Double-sided two-way ranging -------------------------------------------------------------------
 ds_initiator() ->
     % Set the antenna delay -> !! the values should be calibrated

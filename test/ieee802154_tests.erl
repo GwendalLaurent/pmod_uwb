@@ -19,7 +19,8 @@ mac_test_() ->
          {"Transmission" , fun transmission_/0},
          {"Acknowledgment request", fun ar_tx_/0},
          {inorder, [fun rx_on_/0, fun rx_off_/0, fun rx_on_tx_on_/0, fun double_rx_on_/0]},
-         {"invalid address error", fun invalid_addr_error_/0}
+         {"invalid address error", fun invalid_addr_error_/0},
+         {"Get/Set functions", [fun get_pib_/0, fun set_pib_/0]}
      ]}.
 
 %--- Perfect MAC Tests --------------------------------------------------------------
@@ -90,6 +91,19 @@ invalid_addr_error_() ->
     Payload = <<"Invalid addr">>,
     ?assertMatch({error, invalid_address}, ieee802154:transmition(FrameControl, FrameHeader, Payload)).
 
+get_pib_() ->
+    ?assertMatch(<<_:16>>, ieee802154:get_pan_id()),
+    ?assertMatch(<<_:16>>, ieee802154:get_mac_short_address()),
+    ?assertMatch(<<_:64>>, ieee802154:get_mac_extended_address()).
+
+set_pib_() ->
+    ?assertEqual(ok, ieee802154:set_pan_id(<<16#CAFE:16>>)),
+    ?assertMatch(<<16#CAFE:16>>,ieee802154:get_pan_id()),
+    ?assertEqual(ok, ieee802154:set_mac_short_address(<<16#DECA:16>>)),
+    ?assertMatch(<<16#DECA:16>>,ieee802154:get_mac_short_address()),
+    ?assertMatch(ok, ieee802154:set_mac_extended_address(<<16#CAFEDECACAFEDECA:64>>)),
+    ?assertMatch(<<16#CAFEDECACAFEDECA:64>>, ieee802154:get_mac_extended_address()).
+
 %--- Lossy MAC ----------------------------------------------------------------------
 setup_lossy() ->
     ieee802154:start_link(#ieee_parameters{mac_layer = lossy_mock_mac}).
@@ -98,7 +112,7 @@ lossy_mac_test_() ->
     {setup, fun setup_lossy/0, fun teardown/1,
      [{"Lossy AR", fun ar_tx_lossy_/0}]}.
 
-%--- Lossy MAC Tests --Perfect --------------------------------------------------------------
+%--- Lossy MAC Tests ----------------------------------------------------------------
 ar_tx_lossy_() ->
     FrameControl = #frame_control{ack_req = ?ENABLED},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},

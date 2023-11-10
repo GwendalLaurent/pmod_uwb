@@ -9,6 +9,8 @@
 -export([rx/1]).
 -export([turn_on_rx/2]).
 -export([turn_off_rx/1]).
+-export([get/2]).
+-export([set/3]).
 -export([stop/2]).
 
 % Includes
@@ -21,8 +23,15 @@
 -callback rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 -callback rx_on(State::term(), Callback::function()) -> {ok, State::term()}.
 -callback rx_off(State::term()) -> {ok, State::term()}.
+-callback get(State::term(), Attribute::pibAttribute()) -> {ok, State::term(), Value::term()} | {error, State::term(), unsupported_attribute}.
+-callback set(State::term(), Attribute::pibAttribute(), Value::term()) -> {ok, State::term()} | {error, State::term(), pibSetError()}.
 -callback terminate(State :: term(), Reason :: term()) -> ok.
 
+%--- Types ----------------------------------------------------------------
+-export_type([pibAttribute/0, pibSetError/0]).
+
+-type pibAttribute() :: mac_extended_address | mac_short_address | mac_pand_id | atom().
+-type pibSetError() :: read_only | unsupported_attribute | invalid_parameter.
 
 %--- API ------------------------------------------------------------------
 
@@ -65,6 +74,18 @@ rx({Mod, Sub}) ->
 turn_on_rx({Mod, Sub}, Callback) ->
     {ok, Sub2} = Mod:rx_on(Sub, Callback),
     {ok, {Mod, Sub2}}.
+
+-spec get(State::term(), Attribute::pibAttribute()) -> {ok, State::term(), Value::term()} | {error, State::term(), unsupported_attribute}.
+get({Mod, Sub}, Attribute) ->
+    {Status, Sub2, Ret} = Mod:get(Sub, Attribute),
+    {Status, {Mod, Sub2}, Ret}.
+
+-spec set(State::term(), Attribute::pibAttribute(), Value::term()) -> {ok, State::term()} | {error, State::term(), Error::pibSetError()}.
+set({Mod, Sub}, Attribute, Value) ->
+    case Mod:set(Sub, Attribute, Value) of
+        {ok, Sub2} -> {ok, {Mod, Sub2}};
+        {error, Sub2, Error} -> {error, {Mod, Sub2}, Error}
+    end.
 
 %% @doc Turns off the continuous reception
 %% Note: if the reception is already off, noting happens

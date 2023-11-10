@@ -15,15 +15,23 @@
 <p><b>Behaviours:</b> <a href="gen_mac_layer.html"><tt>gen_mac_layer</tt></a>.</p>
 
 <h2><a name="index">Function Index</a></h2>
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#init-1">init/1</a></td><td>Initialize the MAC layer.</td></tr>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#get-2">get/2</a></td><td></td></tr>
+<tr><td valign="top"><a href="#init-1">init/1</a></td><td>Initialize the MAC layer.</td></tr>
 <tr><td valign="top"><a href="#rx-1">rx/1</a></td><td>Performs the reception of a single packet.</td></tr>
 <tr><td valign="top"><a href="#rx_off-1">rx_off/1</a></td><td>Turns off the continuous reception.</td></tr>
 <tr><td valign="top"><a href="#rx_on-2">rx_on/2</a></td><td>Turns on the continuous reception.</td></tr>
+<tr><td valign="top"><a href="#set-3">set/3</a></td><td></td></tr>
 <tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td>clean up function to stop the mac layer.</td></tr>
 <tr><td valign="top"><a href="#tx-4">tx/4</a></td><td>transmits a frame using the physical layer.</td></tr>
 </table>
 
 <h2><a name="functions">Function Details</a></h2>
+
+<h3 class="function"><a name="get-2">get/2</a></h3>
+<div class="spec">
+<p><tt>get(State::term(), Attribute::<a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibAttribute">gen_mac_layer:pibAttribute()</a>) -&gt; {ok, State::term(), Value::term()} | {error, State::term(), unsupported_attribute}</tt><br></p>
+<p> </p>
+</div>
 
 <h3 class="function"><a name="init-1">init/1</a></h3>
 <div class="spec">
@@ -61,6 +69,12 @@ If you want to use it, it has to be activated later on.</p>
  If the received packet is a data packet requesting an ACL and the autoack is turned on (by default)
  the ACK is handled by the hardware before calling the callback
 </p>
+
+<h3 class="function"><a name="set-3">set/3</a></h3>
+<div class="spec">
+<p><tt>set(State::term(), Attribute::<a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibAttribute">gen_mac_layer:pibAttribute()</a>, Value::term()) -&gt; {ok, State::term()} | {error, State::term(), <a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibSetError">gen_mac_layer:pibSetError()</a>}</tt><br></p>
+<p> </p>
+</div>
 
 <h3 class="function"><a name="terminate-2">terminate/2</a></h3>
 <div class="spec">

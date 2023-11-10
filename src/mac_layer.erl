@@ -12,6 +12,8 @@
 -export([rx/1]).
 -export([rx_on/2]).
 -export([rx_off/1]).        
+-export([get/2]).
+-export([set/3]).
 -export([terminate/2]).
 
 %--- mac_layer_behaviour callback functions ---------------------------------------------
@@ -66,7 +68,38 @@ rx_off(#{duty_cycle := DutyCycleState} = State) ->
     NewDutyCycleState = gen_duty_cycle:turn_off(DutyCycleState),
     {ok, State#{duty_cycle => NewDutyCycleState}}.
 
+-spec get(State::term(), Attribute::gen_mac_layer:pibAttribute()) -> {ok, State::term(), Value::term()} | {error, State::term(), unsupported_attribute}.
+get(#{phy_layer := PhyMod} = State, mac_extended_address) ->
+    #{eui := EUI} = PhyMod:read(eui),
+    {ok, State, EUI};
+get(#{phy_layer := PhyMod} = State, mac_short_address) ->
+    ct:pal("~w", [PhyMod:read(panadr)]),
+    #{short_addr := ShortAddr} = PhyMod:read(panadr),
+    {ok, State, ShortAddr};
+get(#{phy_layer := PhyMod} = State, mac_pan_id) ->
+    ct:pal("~w", [PhyMod:read(panadr)]),
+    #{pan_id := PanId} = PhyMod:read(panadr),
+    {ok, State, PanId};
+get(State, _Attribute) ->
+    {error, State, unsupported_attribute}.
+
+-spec set(State::term(), Attribute::gen_mac_layer:pibAttribute(), Value::term()) -> {ok, State::term()} | {error, State::term(), gen_mac_layer:pibSetError()}.
+set(#{phy_layer := PhyMod} = State, mac_extended_address, Value) ->
+    PhyMod:write(eui, #{eui => Value}), % TODO check the range/type/value given
+    {ok, State};
+set(#{phy_layer := PhyMod} = State, mac_short_address, Value) ->
+    PhyMod:write(panadr, #{short_addr => Value}),
+    {ok, State};
+set(#{phy_layer := PhyMod} = State, mac_pan_id, Value) ->
+    PhyMod:write(panadr, #{pan_id => Value}),
+    {ok, State};
+set(State, _Attribute, _) ->
+    {error, State, unsupported_attribute}. % TODO detect if PIB is a read only attribute
+
 % @doc clean up function to stop the mac layer
 % @end
 terminate(#{duty_cycle := DutyCycleState}, Reason) -> 
     gen_duty_cycle:stop(DutyCycleState, Reason).
+
+
+

@@ -66,19 +66,19 @@ read(RegFileID) -> call({read, RegFileID}).
 %% === Examples ===
 %% To write in a simple register file (i.e. a register without any sub-register):
 %% ```
-%% 1> pmod_uwb:write(eui, #{eui => 16#AAAAAABBBBBBBBBB}).
+%% 1> pmod_uwb:write(eui, #{eui => <<16#AAAAAABBBBBBBBBB>>}).
 %% ok
 %% ''' 
 %% To write in one sub-register of a register file:
 %% ```
-%% 2> pmod_uwb:write(panadr, #{pan_id => 16#AAAA}). 
+%% 2> pmod_uwb:write(panadr, #{pan_id => <<16#AAAA>>}). 
 %% ok
 %% '''
 %% The previous code will only change the values inside the sub-register PAN_ID
 %%
 %% To write in multiple sub-register of a register file in the same burst:
 %% ```
-%% 3> pmod_uwb:write(panadr, #{pan_id => 16#AAAA, short_addr => 16#BBBB}).
+%% 3> pmod_uwb:write(panadr, #{pan_id => <<16#AAAA>>, short_addr => <<16#BBBB>>}).
 %% ok
 %% '''
 %% Some sub-registers have their own fields. For example to set the value of the DIS_AM field in the sub-register AGC_CTRL1 of the register file AGC_CTRL:
@@ -570,22 +570,22 @@ reg(encode, eui, Val) ->
     #{
         eui:= EUI
     } = Val,
-    reverse(<<
-        EUI:64
-    >>);
+    reverse(
+        EUI
+    );
 reg(decode, panadr, Resp) ->
     <<
         PanId:16, ShortAddr:16
     >> = reverse(Resp),
     #{
-        pan_id => PanId, short_addr => ShortAddr
+        pan_id => <<PanId:16>>, short_addr => <<ShortAddr:16>>
     };
 reg(encode, panadr, Val) ->
     #{
         pan_id := PanId, short_addr := ShortAddr
     } = Val,
     reverse(<<
-        PanId:16, ShortAddr:16
+        PanId:16/bitstring, ShortAddr:16/bitstring
     >>);
 reg(decode, sys_cfg, Resp) ->
     << 
