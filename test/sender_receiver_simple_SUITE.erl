@@ -14,9 +14,7 @@ all() -> [{group, simple_tx_rx}].
 groups() -> [{simple_tx_rx, [parallel], [sender, receiver]}].
 
 init_per_suite(Config) ->
-    Network = ieee_node:boot_node(network),
-    erpc:call(Network, network_simulation, start, [{}, {}]),
-    [{network, Network} | Config].
+    Config.
 
 end_per_suite(_Config) ->
     ok.
@@ -25,30 +23,32 @@ init_per_group(simple_tx_rx, Config) ->
     FrameControl = #frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED}, 
     MacHeader = #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, 
     Payload = <<"Test">>,
-    [{frame_control, FrameControl}, {mac_header, MacHeader}, {payload, Payload} | Config];
+    Network = ieee_node:boot_network_node(),
+    [{network, Network}, {frame_control, FrameControl}, {mac_header, MacHeader}, {payload, Payload} | Config];
 init_per_group(_, Config) ->
     Config.
 
-end_per_group(_, _Config) ->
-    ok.
+end_per_group(_, Config) ->
+    Network = ?config(network, Config),
+    ieee_node:stop_network_node(Network).
 
 init_per_testcase(sender, Config) ->
-    Node = ieee_node:boot_node(sender),
-    erpc:call(Node, ieee802154, start, [#ieee_parameters{mac_layer = simulated_mac, mac_parameters = #{network => ?config(network, Config)}}]),
-    erpc:call(Node, ieee802154, set_mac_extended_address, [<<16#CAFEDECA00000001:64>>]),
+    Network = ?config(network, Config),
+    Node = ieee_node:boot_ieee802154_node(sender, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>),
     [{sender, Node} | Config];
 init_per_testcase(receiver, Config) ->
-    Node = ieee_node:boot_node(receiver),
-    erpc:call(Node, ieee802154, start, [#ieee_parameters{mac_layer = simulated_mac, mac_parameters = #{network => ?config(network, Config)}}]),
-    erpc:call(Node, ieee802154, set_mac_extended_address, [<<16#CAFEDECA00000002:64>>]),
+    Network = ?config(network, Config),
+    Node = ieee_node:boot_ieee802154_node(receiver, Network, mac_extended_address, <<16#CAFEDECA00000002:64>>),
     [{receiver, Node} | Config];
 init_per_testcase(_, Config) ->
     Config.
 
 end_per_testcase(sender, Config) ->
     SenderNode = ?config(sender, Config),
-    erpc:call(SenderNode, ieee802154, stop, []);
-
+    ieee_node:stop_ieee802154_node(SenderNode);
+end_per_testcase(receiver, Config) ->
+    ReceiverNode = ?config(receiver, Config),
+    ieee_node:stop_ieee802154_node(ReceiverNode);
 end_per_testcase(_, _Config) ->
     ok.
 

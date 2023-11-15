@@ -16,16 +16,18 @@ start(_, _) ->
     {ok, LoopPid}.
 
 stop(_) ->
-    ok.
+    network_loop ! {stop},
+    unregister(network_loop).
 
 %--- Internal -----------------------------
 
 loop(#{nodes := Nodes} = State) ->
     io:format("Looping"),
     receive
+        {ping, Pid, Node} -> {Pid, Node} ! pong, loop(State);
         {register, Name} -> loop(State#{nodes => [Name | Nodes]});
-        {tx, Frame} -> broadcast(Nodes, Frame), loop(State) 
-    after 500 -> io:format("Nothing"), loop(State)
+        {tx, Frame} -> broadcast(Nodes, Frame), loop(State);
+        {stop} -> ok
     end.
 
 broadcast(Nodes, Frame) -> 
