@@ -1,4 +1,4 @@
--module(simulated_phy).
+-module(mock_phy_network).
 
 -include("../src/mac_frame.hrl").
 
@@ -26,7 +26,7 @@ reception(Pid, Address) ->
 loop(Waiting) ->
     receive 
         {reception, Pid, Ref, Address} -> loop([{Pid, Ref, Address} | Waiting]);
-        {rx, Frame} -> NewWaiting = reply(Waiting, Frame), loop(NewWaiting)
+        {frame, Frame} -> NewWaiting = reply(Waiting, Frame), loop(NewWaiting)
     end.
 
 reply([], _) -> [];

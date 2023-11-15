@@ -32,4 +32,4 @@ loop(#{nodes := Nodes} = State) ->
 
 broadcast(Nodes, Frame) -> 
     io:format("Broadcasting"),
-    [{phy, Node} ! {rx, Frame} || Node <- Nodes].
+    [{phy, Node} ! {frame, Frame} || Node <- Nodes].

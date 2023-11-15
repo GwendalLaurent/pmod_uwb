@@ -1,4 +1,4 @@
--module(simulated_mac).
+-module(mock_mac_network).
 
 -include("../src/mac_frame.hrl").
 -include("../src/gen_mac_layer.hrl").
@@ -21,7 +21,7 @@
 -spec init(Params::list()) -> State :: term().
 init(#{network := NetworkNode}) ->
     {network_loop, NetworkNode} ! {register, node()},
-    PhyPid = simulated_phy:start(),
+    PhyPid = mock_phy_network:start(),
     #{network => NetworkNode, phy => PhyPid, pib => #{mac_extended_address => <<16#FFFFFFFFFFFFFFFF:64>>, mac_short_address => <<16#FFFF:16>>, mac_pan_id => <<16#FFFF:16>>}};
 init(_) ->
     #{pib => #{mac_extended_address => <<16#FFFFFFFFFFFFFFFF:64>>, mac_short_address => <<16#FFFF:16>>, mac_pan_id => <<16#FFFF:16>>}}.
@@ -35,7 +35,7 @@ tx(State, _, _, _) ->
 
 -spec rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 rx(#{pib := PIB, phy := PhyPid} = State) ->
-    case simulated_phy:reception(PhyPid, get_pib(PIB, mac_extended_address)) of
+    case mock_phy_network:reception(PhyPid, get_pib(PIB, mac_extended_address)) of
         {error, Error} -> {error, State, Error};
         Frame -> {ok, State, mac_frame:decode(Frame)}
     end. 
