@@ -30,21 +30,21 @@ transmission_() ->
     FrameControl = #frame_control{pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
     Payload = <<"Hello">>,
-    ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, Payload)),
-    ieee802154:transmition(FrameControl, MacHeader, Payload),
+    ?assertEqual(ok, ieee802154:transmission(FrameControl, MacHeader, Payload)),
+    ieee802154:transmission(FrameControl, MacHeader, Payload),
     ?assertMatch({idle, _}, sys:get_state(ieee802154)).
 
 reception_() ->
     ?assertMatch({idle, _}, sys:get_state(ieee802154)),
     FrameControl = #frame_control{pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
-    ?assertEqual({FrameControl, MacHeader, <<"Hello">>}, ieee802154:reception()),
+    ?assertEqual({ok, {FrameControl, MacHeader, <<"Hello">>}}, ieee802154:reception()),
     ?assertMatch({idle, _}, sys:get_state(ieee802154)).
 
 ar_tx_() ->
     FrameControl = #frame_control{ack_req = ?ENABLED, pan_id_compr = ?ENABLED},
     MacHeader = #mac_header{seqnum = 54, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
-    ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, <<"Hello">>)).
+    ?assertEqual(ok, ieee802154:transmission(FrameControl, MacHeader, <<"Hello">>)).
 
 rx_on_() ->
     ?assertEqual(ok, ieee802154:rx_on()),
@@ -63,7 +63,7 @@ rx_on_tx_on_() ->
     FrameControl = #frame_control{pan_id_compr = ?ENABLED, frame_version = 2#00},
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
     Payload = <<"Hello">>,
-    ?assertEqual(ok, ieee802154:transmition(FrameControl, MacHeader, Payload)),
+    ?assertEqual(ok, ieee802154:transmission(FrameControl, MacHeader, Payload)),
 
     ?assertMatch({rx, _}, sys:get_state(ieee802154)),
     ?assertMatch({_, #{mac_layer := {_, #{rx := on}}}}, sys:get_state(ieee802154)),
@@ -89,7 +89,7 @@ invalid_addr_error_() ->
     FrameControl = #frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE},
     FrameHeader = #mac_header{},
     Payload = <<"Invalid addr">>,
-    ?assertMatch({error, invalid_address}, ieee802154:transmition(FrameControl, FrameHeader, Payload)).
+    ?assertMatch({error, invalid_address}, ieee802154:transmission(FrameControl, FrameHeader, Payload)).
 
 get_pib_() ->
     ?assertMatch(<<_:16>>, ieee802154:get_pan_id()),
@@ -118,4 +118,4 @@ ar_tx_lossy_() ->
     MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
     Payload = <<"Hello">>,
 
-    ?assertMatch({error, no_ack}, ieee802154:transmition(FrameControl, MacHeader, Payload)).
+    ?assertMatch({error, no_ack}, ieee802154:transmission(FrameControl, MacHeader, Payload)).

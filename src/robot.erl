@@ -19,7 +19,7 @@ tx() ->
     % FrameControl = #frame_control{ack_req = ?ENABLED},
     FrameControl = #frame_control{},
     MacHeader = #mac_header{},
-    ieee802154:transmition(FrameControl, MacHeader, <<"Test">>).
+    ieee802154:transmission(FrameControl, MacHeader, <<"Test">>).
 
 rx_callback({_FrameControl, MacHeader, Payload}) ->
     io:format("Received frame with seqnum: ~w - Payload: ~w ~n", [MacHeader#mac_header.seqnum, Payload]).
@@ -29,7 +29,7 @@ rx_off() -> ieee802154:rx_off().
 
 tx(0) -> ok;
 tx(N) ->
-    ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>),
+    ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>),
     tx(N-1).
 
 start(_Type, _Args) -> 

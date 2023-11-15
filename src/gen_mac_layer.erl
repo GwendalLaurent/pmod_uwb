@@ -18,7 +18,7 @@
 -include("gen_mac_layer.hrl").
 
 % Callbacks
--callback init(Params::list()) -> State :: term().
+-callback init(Params::map()) -> State :: term().
 -callback tx(State::term(), FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()) -> {ok, State::term()} | {ok, State::term()} | {error, State::term(), Error::tx_error()}.
 -callback rx(State::term()) -> {ok, State::term(), {FrameControl::#frame_control{}, MacHeader::#mac_header{}, Payload::bitstring()}} | {error, State::term(), Error::atom()}.
 -callback rx_on(State::term(), Callback::function()) -> {ok, State::term()}.
@@ -39,7 +39,7 @@
 %% Module has to implement the gen_mac_layer behaviour
 %% The parameters are encapsulated in a list. This avoids having to specify the whole stack when using a mockup
 %% @end
--spec start(Module::module(), Params::list()) -> State::term().
+-spec start(Module::module(), Params::map()) -> State::term().
 start(Module, Params) ->
     {Module, Module:init(Params)}.
 

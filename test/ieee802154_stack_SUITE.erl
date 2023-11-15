@@ -12,8 +12,9 @@
 all() -> [stack_test, stack_read_write_test].
 
 init_per_testcase(_, Config) ->
+    ct:pal("~w", [Config]),
     MockPhyPid = mock_phy:start_link(spi2, {perfect, #{}}),
-    IEEE = ieee802154:start_link(#ieee_parameters{mac_parameters = [mock_phy, duty_cycle_non_beacon]}),
+    IEEE = ieee802154:start_link(#ieee_parameters{mac_parameters = #{phy_layer => mock_phy, duty_cycle => duty_cycle_non_beacon}}),
     [{ieee_pid, IEEE}, {phy_pid, MockPhyPid} | Config].
 
 end_per_testcase(_, _Config) ->
@@ -22,12 +23,11 @@ end_per_testcase(_, _Config) ->
 
 stack_test(_Config) -> 
     ieee802154:rx_on(),
-    ct:pal("~w~n", [sys:get_state(ieee802154)]),
-    ieee802154:transmition(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
-    ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>),
+    ieee802154:transmission(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
+    ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>),
     ieee802154:rx_off(),
-    ieee802154:transmition(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
-    ieee802154:transmition(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>).
+    ieee802154:transmission(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
+    ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>).
 
 stack_read_write_test(_Config) ->
     ieee802154:get_mac_extended_address(),

@@ -3,5 +3,6 @@ rebar.lock
 # *.config
 doc/
 erlang_ls.config
+elvis.config
 
 *.old

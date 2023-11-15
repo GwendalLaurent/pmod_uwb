@@ -23,11 +23,12 @@ mac_encode_decode() ->
       {"Decode ACK frame from device", fun decode_ack_frame_from_device_/0},
       {"Decode Mac message no src", fun decode_mac_message_no_src_/0},
       {"Decode MAC message no src no compt", fun decode_mac_message_no_src_no_compt_/0},
-      {"Encode ACK frame", fun encode_ack_frame/0}]}.
+      {"Encode ACK frame", fun encode_ack_frame/0},
+      {"Encode and decode with extended addresses", fun encode_decode_extended_address/0}]}.
 
 setup_perfect() ->
     mock_phy:start_link(spi2, {perfect, #{}}),
-    gen_mac_layer:start(mac_layer, [mock_phy, duty_cycle_non_beacon]).
+    gen_mac_layer:start(mac_layer, #{phy_layer => mock_phy, duty_cycle => duty_cycle_non_beacon}).
 
 teardown(State) ->
     gen_mac_layer:stop(State, exit),
@@ -41,7 +42,7 @@ mac_perfect_phy() ->
 
 mac_faulty_setup() ->
     mock_phy:start_link(spi2, {faulty, #{}}),
-    gen_mac_layer:start(mac_layer, [mock_phy, duty_cycle_non_beacon]).
+    gen_mac_layer:start(mac_layer, #{phy_layer => mock_phy, duty_cycle => duty_cycle_non_beacon}).
 
 mac_faulty_phy() ->
     {setup, fun mac_faulty_setup/0, fun teardown/1, {with, [
@@ -49,7 +50,7 @@ mac_faulty_phy() ->
 
 mac_lossy_setup() ->
     mock_phy:start_link(spi2, {lossy, #{}}),
-    gen_mac_layer:start(mac_layer, [mock_phy, duty_cycle_non_beacon]).
+    gen_mac_layer:start(mac_layer, #{phy_layer => mock_phy, duty_cycle => duty_cycle_non_beacon}).
 
 mac_lossy_phy() -> % Note: Not sure if I should keep that kind of tests
     {setup, fun mac_lossy_setup/0, fun teardown/1, {with, [
@@ -120,6 +121,12 @@ encode_ack_frame() ->
 
     FramePendingEnabled = mac_frame:encode_ack(?ENABLED, 200),
     ?assertEqual(<<16#1200:16, 200:8>>, FramePendingEnabled).
+
+encode_decode_extended_address() ->
+    FrameControl = #frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED},
+    MacHeader = #mac_header{src_addr = <<16#DECACAFE0001:64>>, dest_addr = <<16#DECACAFE0002:64>>},
+    Payload = <<"Test">>,
+    ?assertEqual({FrameControl, MacHeader, Payload}, mac_frame:decode(mac_frame:encode(FrameControl, MacHeader, Payload))).
 
 %--- perfect phy layer test ---------------------------------------------------------------------
 transmission_(State) ->

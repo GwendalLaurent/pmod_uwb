@@ -4,9 +4,11 @@
 
 % API
 -export([start_link/1]).
+-export([start/1]).
 -export([stop_link/0]).
+-export([stop/0]).
 
--export([transmition/3]).
+-export([transmission/3]).
 -export([reception/0]).
 
 -export([rx_on/0]).
@@ -56,11 +58,15 @@
 -spec start_link(Params::#ieee_parameters{}) -> {ok, pid()} | {error, any()}.
 start_link(Params) -> gen_statem:start_link({local, ?MODULE}, ?MODULE, Params, []).
 
+start(Params) -> gen_statem:start({local, ?MODULE}, ?MODULE, Params, []).
+
 stop_link() ->
     gen_statem:stop(?MODULE).
 
--spec transmition(FrameControl :: #frame_control{}, FrameHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
-transmition(FrameControl, FrameHeader, Payload) -> gen_statem:call(?MODULE, {tx, FrameControl, FrameHeader, Payload}, infinity).
+stop() -> gen_statem:stop(?MODULE).
+
+-spec transmission(FrameControl :: #frame_control{}, FrameHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
+transmission(FrameControl, FrameHeader, Payload) -> gen_statem:call(?MODULE, {tx, FrameControl, FrameHeader, Payload}, infinity).
 
 %% @doc Wait for the reception of a frame and returns its content
 %% @end
@@ -141,8 +147,8 @@ idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data) ->
 
 idle({call, From}, rx, #{mac_layer := MacState} = Data) -> % simple RX doesn't goes in RX state
     case gen_mac_layer:rx(MacState) of
-        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} -> {keep_state, Data#{mac_layer => NewMacState}, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
-        {error, Err, NewMacState} -> {keep_state, Data#{mac_layer => NewMacState}, [{reply, From, Err}]}
+        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} -> {keep_state, Data#{mac_layer => NewMacState}, [{reply, From, {ok, {FrameControl, FrameHeader, Payload}}}]};
+        {error, NewMacState, Error} -> {keep_state, Data#{mac_layer => NewMacState}, [{reply, From, {error, Error}}]}
     end;
 
 idle(EventType, EventContent, Data) -> handle_event(EventType, EventContent, idle, Data).
@@ -165,8 +171,8 @@ rx({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data)->
 
 rx(_EventType, {rx, From}, #{mac_layer := MacState} = Data) ->
     case gen_mac_layer:rx(MacState) of
-        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {FrameControl, FrameHeader, Payload}}]};
-        {error, Err, NewMacState} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, Err}]}
+        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {ok, {FrameControl, FrameHeader, Payload}}}]};
+        {error, NewMacState, Error} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {error, Error}}]}
     end;
 
 rx(EventType, EventContent, Data) -> handle_event(EventType, EventContent, rx, Data).
