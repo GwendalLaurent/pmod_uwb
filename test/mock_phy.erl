@@ -48,9 +48,9 @@ disable_rx() ->
 %%% gen_server callbacks
 init({_Params, Type}) ->
     case Type of
-        perfect -> {ok, {perfect, default()}};
-        faulty -> {ok, {faulty, default()}};
-        lossy -> {ok, {loss, default()}}
+        perfect -> {ok, {perfect, pmod_uwb_registers:default()}};
+        faulty -> {ok, {faulty, pmod_uwb_registers:default()}};
+        lossy -> {ok, {loss, pmod_uwb_registers:default()}}
     end.
 
 handle_call({transmit, Data, Options}, _From, State) -> {reply, tx(Data, Options), State};
@@ -62,7 +62,7 @@ handle_call({reception}, _From, {loss, _} = State) ->
         2 -> {reply, rx(), State}
     end;
 handle_call({read, Reg}, _From, {_, MapValues} = State) -> {reply, maps:get(Reg, MapValues), State};
-handle_call({write, Reg, Val}, _From, {Type, MapValues}) -> {reply, ok, {Type, update_reg(MapValues, Reg, Val)}};
+handle_call({write, Reg, Val}, _From, {Type, MapValues}) -> {reply, ok, {Type, pmod_uwb_registers:update_reg(MapValues, Reg, Val)}};
 handle_call({rx_off}, _From, State) -> {reply, ok, State};
 handle_call(_Request, _From, _State) -> error(not_implemented).
 
@@ -80,40 +80,3 @@ rx() ->
 rx_faulty() ->
     timer:sleep(2000),
     rxpto.
-
-default() ->
-    #{eui => #{eui => <<16#FFFFFFFF:64>>},
-      panadr => #{pan_id => <<16#FFFF:16>>, short_addr => <<16#FFFF:16>>},
-      rx_fwto => #{rxfwto => 0},
-      sys_cfg => #{aackpend => 0,
-                   autoack => 0,
-                   rxautr => 0,
-                   rxwtoe => 0,
-                   rxm110k => 0,
-                   dis_stxp => 0,
-                   phr_mode => 0,
-                   fcs_init2f => 0,
-                   dis_rsde => 0,
-                   dis_phe => 0,
-                   dis_drxb => 1,
-                   dis_fce => 0,
-                   spi_edge => 0,
-                   hirq_pol => 1,
-                   ffa5 => 0,
-                   ffa4 => 0,
-                   ffar => 0,
-                   ffam => 0,
-                   ffaa => 0,
-                   ffad => 0,
-                   ffab => 0,
-                   ffbc => 0,
-                   ffen => 0},
-      rx_sniff => #{sniff_offt => 0, sniff_ont => 0},
-      pmsc => #{pmsc_ctrl0 => #{}, % PMSC isn't complete yet
-                pmsc_ctrl1 => #{arx2init => 0}}
-     }.
-
-update_reg(Regs, Reg, NewVal) ->
-    OldVal = maps:get(Reg, Regs),
-    if is_map(OldVal) -> maps:put(Reg, maps:merge(OldVal, NewVal), Regs);
-       true -> maps:put(Reg, NewVal, Regs) end.

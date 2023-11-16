@@ -32,4 +32,4 @@ loop(#{nodes := Nodes} = State) ->
 
 broadcast(Nodes, Frame) -> 
     io:format("Broadcasting"),
-    [{phy, Node} ! {frame, Frame} || Node <- Nodes].
+    [{mock_phy_network, Node} ! {frame, Frame} || Node <- Nodes].

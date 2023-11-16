@@ -9,11 +9,14 @@
 -export([sender/1]).
 -export([receiver/1]).
 -export([outsider/1]).
+-export([sender_no_ack/1]).
 
-all() -> [{group, simple_tx_rx}, {group, tx_rx_multiple_nodes}].
+all() -> [{group, simple_tx_rx}, {group, tx_rx_multiple_nodes}, {group, tx_rx_ack}, {group, tx_rx_no_ack}].
 
 groups() -> [{simple_tx_rx, [parallel], [sender, receiver]},
-             {tx_rx_multiple_nodes, [parallel], [sender, receiver, outsider]}].
+             {tx_rx_multiple_nodes, [parallel], [sender, receiver, outsider]},
+             {tx_rx_ack, [parallel], [sender, receiver, outsider]},
+             {tx_rx_no_ack, [parallel], [sender_no_ack, outsider]}].
 
 init_per_suite(Config) ->
     Config.
@@ -21,6 +24,13 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     ok.
 
+init_per_group(tx_rx_no_ack, Config) -> init_per_group(tx_rx_ack, Config); % Config is the same
+init_per_group(tx_rx_ack, Config) ->
+    FrameControl = #frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED, ack_req = ?ENABLED}, 
+    MacHeader = #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, 
+    Payload = <<"Test">>,
+    {NetPid, Network} = ieee_node:boot_network_node(),
+    [{net_pid, NetPid}, {network, Network}, {frame_control, FrameControl}, {mac_header, MacHeader}, {payload, Payload} | Config];
 init_per_group(_, Config) ->
     FrameControl = #frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED}, 
     MacHeader = #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, 
@@ -33,6 +43,10 @@ end_per_group(_, Config) ->
     NetPid = ?config(net_pid, Config),
     ieee_node:stop_network_node(Network, NetPid).
 
+init_per_testcase(sender_no_ack, Config) -> 
+    Network = ?config(network, Config),
+    NodeRef = ieee_node:boot_ieee802154_node(sender_no_ack, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>),
+    [{sender_no_ack, NodeRef} | Config];
 init_per_testcase(sender, Config) ->
     Network = ?config(network, Config),
     NodeRef = ieee_node:boot_ieee802154_node(sender, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>),
@@ -50,9 +64,7 @@ init_per_testcase(_, Config) ->
 
 end_per_testcase(Name, Config) ->
     {NodePid, Node} = ?config(Name, Config),
-    ieee_node:stop_ieee802154_node(Node, NodePid);
-end_per_testcase(_, _Config) ->
-    ok.
+    ieee_node:stop_ieee802154_node(Node, NodePid).
 
 %--- Test cases -----------------------------------------------------------------------------
 
@@ -60,7 +72,7 @@ sender(Config) ->
     ct:sleep(100),
     {_, Node} = ?config(sender, Config),
     {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
-    erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]).
+    ok = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]).
 
 receiver(Config) ->
     {_, Node} = ?config(receiver, Config),
@@ -69,7 +81,13 @@ receiver(Config) ->
 
 outsider(Config) ->
     {_, Node} = ?config(outsider, Config),
-    {error, timeout} = erpc:call(Node, ieee802154, reception, []).
+    {error, rxfwto} = erpc:call(Node, ieee802154, reception, []).
+
+sender_no_ack(Config) ->
+    ct:sleep(100),
+    {_, Node} = ?config(sender_no_ack, Config),
+    {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
+    {error, no_ack} = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]).
 
 %--- Internal -------------------------------------------------------------------------------
 

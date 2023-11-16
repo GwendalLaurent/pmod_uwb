@@ -3,11 +3,13 @@
 
 %% API
 -export([start_link/2]).
--export([init/1, handle_call/3, handle_cast/2]).
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, wait_for_transmission/0, reception/0, reception/1]).
 -export([set_frame_timeout/1]).
 -export([softreset/0, clear_rx_flags/0]).
 -export([disable_rx/0]).
+
+% gen_server callback
+-export([init/1, handle_call/3, handle_cast/2]).
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
 
@@ -39,7 +41,6 @@
 
 %--- API -----------------------------------------------------------------------
 
-%% @private
 start_link(Connector, _Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Connector, []).
 
