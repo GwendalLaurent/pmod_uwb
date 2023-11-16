@@ -1,4 +1,4 @@
--module(ieee_node).
+-module(ieee802154_node).
 
 -export([boot_network_node/0, stop_network_node/2]).
 -export([boot_ieee802154_node/4, stop_ieee802154_node/2]).
@@ -9,7 +9,8 @@
 
 -include("../src/ieee802154.hrl").
 
--define(ROBOT_REL_DIR, "/_build/default/rel/robot").
+% -define(ROBOT_REL_DIR, "/_build/default/rel/robot").
+-define(ROBOT_LIB_DIR, "/_build/default/lib").
 
 -spec boot_network_node() -> node().
 boot_network_node() ->
@@ -25,7 +26,7 @@ stop_network_node(Network, NetPid) ->
 
 -spec boot_ieee802154_node(Name::atom(), Network::node(), AddressType::mac_extended_address|mac_short_address, Address::bitstring()) -> node().
 boot_ieee802154_node(Name, Network, AddressType, Address) ->
-    {Pid, Node} = ieee_node:boot_node(Name),
+    {Pid, Node} = boot_node(Name),
     erpc:call(Node, mock_phy_network, start, [spi2, #{network => Network}]), % Starting the the mock driver/physical layer
     erpc:call(Node, ieee802154, start, [#ieee_parameters{mac_layer = mac_layer, mac_parameters = #{phy_layer => mock_phy_network, duty_cycle => duty_cycle_non_beacon}}]),
     case AddressType of
@@ -42,7 +43,8 @@ stop_ieee802154_node(Node, NodePid) ->
 -spec boot_node(Name::atom()) -> {pid(), node()}.
 boot_node(Name) ->
     ProjectCWD = get_project_cwd(),
-    Flags = ["-pa", ProjectCWD ++ ?ROBOT_REL_DIR ++ "/lib/robot-0.1.0/ebin"],
+    %Flags = ["-pa", ProjectCWD ++ ?ROBOT_REL_DIR ++ "/lib/robot-0.1.0/ebin"],
+    Flags = ["-pa", ProjectCWD ++ ?ROBOT_LIB_DIR ++ "/robot/ebin"],
     {ok, Pid, NodeName} = ?CT_PEER(#{name => Name, args => Flags}),
     unlink(Pid),
     {Pid, NodeName}.
