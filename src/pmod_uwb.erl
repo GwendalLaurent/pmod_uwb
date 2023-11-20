@@ -1,7 +1,7 @@
 -module(pmod_uwb).
 -behaviour(gen_server).
 
-%% API
+% API
 -export([start_link/2]).
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, wait_for_transmission/0, reception/0, reception/1]).
 -export([set_frame_timeout/1]).
@@ -13,31 +13,78 @@
 
 -compile({nowarn_unused_function, [debug_read/2, debug_write/2, debug_write/3, debug_bitstring/1, debug_bitstring_hex/1]}).
 
-% Include for the record "device"
+% Includes
 -include("grisp.hrl").
 
 -include("pmod_uwb.hrl").
+
+%--- Macros --------------------------------------------------------------------
 
 % Define the polarity and the phase of the clock
 -define(SPI_MODE, #{clock => {low, leading}}).
 
 -define(WRITE_ONLY_REG_FILE(RegFileID), RegFileID == tx_buffer).
--define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; RegFileID==sys_time; RegFileID==rx_finfo; RegFileID==rx_buffer; RegFileID==rx_fqual; RegFileID==rx_ttcko;
-                                       RegFileID==rx_time; RegFileID==tx_time; RegFileID==sys_state; RegFileID==acc_mem).
 
-% The congifurations of the subregisters of these register files are different (some sub-registers are RO, some are RW and some have reserved bytes that can't be written)
-% Thus, some registers files require to write their sub-register independently => Write the sub-registers one by one instead of writting the whole register file directly
--define(IS_SRW(RegFileID), RegFileID==agc_ctrl; RegFileID==ext_sync; RegFileID==ec_ctrl; RegFileID==gpio_ctrl; RegFileID==drx_conf; RegFileID==rf_conf; RegFileID==tx_cal; 
-                           RegFileID==fs_ctrl; RegFileID==aon; RegFileID==otp_if; RegFileID==lde_if; RegFileID==dig_diag; RegFileID==pmsc).
+-define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; 
+                                       RegFileID==sys_time; 
+                                       RegFileID==rx_finfo;
+                                       RegFileID==rx_buffer;
+                                       RegFileID==rx_fqual;
+                                       RegFileID==rx_ttcko;
+                                       RegFileID==rx_time;
+                                       RegFileID==tx_time;
+                                       RegFileID==sys_state;
+                                       RegFileID==acc_mem).
 
--define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs; SubRegister==agc_stat1; SubRegister==ec_rxtc; SubRegister==ec_glop; SubRegister==drx_car_int; 
-                                         SubRegister==rf_status; SubRegister==tc_sarl; SubRegister==sarw; SubRegister==tc_pg_status; SubRegister==lde_thresh;
-                                         SubRegister==lde_ppindx; SubRegister==lde_ppampl; SubRegister==evc_phe; SubRegister==evc_rse; SubRegister==evc_fcg; 
-                                         SubRegister==evc_fce; SubRegister==evc_ffr; SubRegister==evc_ovr; SubRegister==evc_sto; SubRegister==evc_pto; 
-                                         SubRegister==evc_fwto; SubRegister==evc_txfs; SubRegister==evc_hpw; SubRegister==evc_tpw).
+%% The congifurations of the subregisters of these register files are different
+%% (some sub-registers are RO, some are RW and some have reserved bytes 
+%% that can't be written)
+%% Thus, some registers files require to write their sub-register independently 
+%% => Write the sub-registers one by one instead of writting 
+%%    the whole register file directly
+-define(IS_SRW(RegFileID), RegFileID==agc_ctrl;
+                           RegFileID==ext_sync;
+                           RegFileID==ec_ctrl;
+                           RegFileID==gpio_ctrl;
+                           RegFileID==drx_conf;
+                           RegFileID==rf_conf;
+                           RegFileID==tx_cal;
+                           RegFileID==fs_ctrl;
+                           RegFileID==aon;
+                           RegFileID==otp_if;
+                           RegFileID==lde_if;
+                           RegFileID==dig_diag;
+                           RegFileID==pmsc).
+
+-define(READ_ONLY_SUB_REG(SubRegister), SubRegister==irqs;
+                                        SubRegister==agc_stat1;
+                                        SubRegister==ec_rxtc;
+                                        SubRegister==ec_glop;
+                                        SubRegister==drx_car_int;
+                                        SubRegister==rf_status;
+                                        SubRegister==tc_sarl;
+                                        SubRegister==sarw;
+                                        SubRegister==tc_pg_status;
+                                        SubRegister==lde_thresh;
+                                        SubRegister==lde_ppindx;
+                                        SubRegister==lde_ppampl;
+                                        SubRegister==evc_phe;
+                                        SubRegister==evc_rse;
+                                        SubRegister==evc_fcg;
+                                        SubRegister==evc_fce;
+                                        SubRegister==evc_ffr;
+                                        SubRegister==evc_ovr;
+                                        SubRegister==evc_sto;
+                                        SubRegister==evc_pto; 
+                                        SubRegister==evc_fwto;
+                                        SubRegister==evc_txfs;
+                                        SubRegister==evc_hpw;
+                                        SubRegister==evc_tpw).
+
+%--- Types ---------------------------------------------------------------------
 
 -type regFileID() :: atom().
-
+-opaque tx_opts() :: #tx_opts{}.
 
 %--- API -----------------------------------------------------------------------
 
@@ -45,7 +92,6 @@ start_link(Connector, _Opts) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Connector, []).
 
 
-%% ---------------------------------------------------------------------------------------
 %% @doc read a register file
 %%
 %% === Example ===
@@ -54,18 +100,17 @@ start_link(Connector, _Opts) ->
 %% 1> pmod_uwb:read(dev_id).
 %% #{model => 1,rev => 0,ridtag => "DECA",ver => 3}
 %% '''
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec read(RegFileID :: regFileID()) -> map() | {error, any()}.
+-spec read(RegFileID) -> Result when
+    RegFileID :: regFileID(),
+    Result    :: map() | {error, any()}.
 read(RegFileID) when ?WRITE_ONLY_REG_FILE(RegFileID) ->
     error({read_on_write_only_register, RegFileID});
 read(RegFileID) -> call({read, RegFileID}).
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Write values in a register
 %% 
 %% === Examples ===
-%% To write in a simple register file (i.e. a register without any sub-register):
+%% To write in a simple register file (i.e. a register without any sub-register)
 %% ```
 %% 1> pmod_uwb:write(eui, #{eui => <<16#AAAAAABBBBBBBBBB>>}).
 %% ok
@@ -79,22 +124,24 @@ read(RegFileID) -> call({read, RegFileID}).
 %%
 %% To write in multiple sub-register of a register file in the same burst:
 %% ```
-%% 3> pmod_uwb:write(panadr, #{pan_id => <<16#AAAA>>, short_addr => <<16#BBBB>>}).
+%% 3> pmod_uwb:write(panadr, #{pan_id => <<16#AAAA>>,
+%%                             short_addr => <<16#BBBB>>}).
 %% ok
 %% '''
-%% Some sub-registers have their own fields. For example to set the value of the DIS_AM field in the sub-register AGC_CTRL1 of the register file AGC_CTRL:
+%% Some sub-registers have their own fields. For example to set the value of 
+%% the DIS_AM field in the sub-register AGC_CTRL1 of the register file AGC_CTRL:
 %% ```
 %% 4> pmod_uwb:write(agc_ctrl, #{agc_ctrl1 => #{dis_am => 2#0}}).
 %% '''
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec write(RegFileID :: regFileID(), Value :: map()) -> ok | {error, any()}.
+-spec write(RegFileID, Value) -> Result when
+    RegFileID :: regFileID(),
+    Value     :: map(),
+    Result    :: ok | {error, any()}.
 write(RegFileID, Value) when ?READ_ONLY_REG_FILE(RegFileID) ->
     error({write_on_read_only_register, RegFileID, Value});
 write(RegFileID, Value) when is_map(Value) ->
     call({write, RegFileID, Value}).
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Writes the data in the TX_BUFFER register
 %%
 %% Value is expected to be a <b>Binary</b>
@@ -105,21 +152,18 @@ write(RegFileID, Value) when is_map(Value) ->
 %% ```
 %% 1> pmod_uwb:write_tx_data(<<"Hello">>).
 %% '''
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec write_tx_data(Value :: binary()) -> ok | {error, any()}.
+-spec write_tx_data(Value) -> Result when 
+    Value  :: binary(),
+    Result :: ok | {error, any()}.
 write_tx_data(Value) -> call({write_tx, Value}).
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Retrieves the data received on the UWB antenna
 %% @returns {DataLength, Data}
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec get_received_data() -> {integer(), bitstring()} | {error, any()}.
+-spec get_received_data() -> Result when
+    Result :: {integer(), bitstring()} | {error, any()}.
 get_received_data() -> call({get_rx_data}).
 
-%% ---------------------------------------------------------------------------------------
-%% @doc Transmit data with the default options (i.e. don't wait for resp, no delayn ...)
+%% @doc Transmit data with the default options (i.e. don't wait for resp, ...)
 %%
 %% === Examples ===
 %% To transmit a frame:
@@ -127,19 +171,21 @@ get_received_data() -> call({get_rx_data}).
 %% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>).
 %% ok.
 %% '''
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec transmit(Data :: bitstring()) -> ok | {error, any()}.
+-spec transmit(Data) -> Result when
+    Data   :: bitstring(),
+    Result :: ok | {error, any()}.
 transmit(Data) when is_bitstring(Data) ->
     call({transmit, Data, #tx_opts{}}),
     wait_for_transmission().
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Performs a transmission with the specified options
 %%
 %% === Options ===
-%% * wait4resp: It specifies that the reception must be enabled after the transmission in the expectation of a response
-%% * w4r-tim: Specifies the turn around time in microseconds. That is the time the pmod will wait before enabling rx after a tx. Note that it won't be set if wit4resp is disabled
+%% * wait4resp: It specifies that the reception must be enabled after 
+%%              the transmission in the expectation of a response
+%% * w4r-tim: Specifies the turn around time in microseconds. That is the time
+%%            the pmod will wait before enabling rx after a tx. 
+%%            Note that it won't be set if wit4resp is disabled
 %% * txdlys: Specifies if the transmitter delayed sending should be set 
 %% * tx_delay: Specifies the delay of the transmission (see register DX_TIME)
 %%
@@ -149,8 +195,10 @@ transmit(Data) when is_bitstring(Data) ->
 %% 1> pmod_uwb:transmit(<Version:4, NextHop:8>>, #tx_opts{}).
 %% ok.
 %% '''
-%% @end
-%% ---------------------------------------------------------------------------------------
+-spec transmit(Data, Options) -> Result when
+    Data :: bitstring(),
+    Options :: tx_opts(),
+    Result :: ok | {error, any()}.
 transmit(Data, Options) ->
     case Options#tx_opts.wait4resp of
         ?ENABLED -> clear_rx_flags();
@@ -171,24 +219,21 @@ wait_for_transmission() ->
         _ -> wait_for_transmission()
     end.
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
 %% @equiv reception(false)
-%%
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec reception() -> {integer(), bitstring()} | {error, any()}.
+-spec reception() -> Result when 
+    Result :: {integer(), bitstring()} | {error, any()}.
 reception() -> 
     reception(false).
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Receive data using the pmod 
 %%
 %% The function will hang until a frame is received on the board
 %%
 %% The CRC of the received frame <b>isn't</b> included in the returned value
 %%
-%% @param RXEnabled: specifies if the reception is already enabled on the board (or set with delay)
+%% @param RXEnabled: specifies if the reception is already enabled on the board 
+%%                   (or set with delay)
 %%
 %% === Example ===
 %% ```
@@ -196,9 +241,9 @@ reception() ->
 %% % Some frame is transmitted
 %% {11, <<"Hello world">>}.
 %% '''
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec reception(RXEnabled :: boolean()) -> {integer(), bitstring()} | {error, any()}.
+-spec reception(RXEnabled) -> Result when
+      RXEnabled :: boolean(),
+      Result    :: {integer(), bitstring()} | {error, any()}.
 reception(RXEnabled) ->
     if not RXEnabled -> enable_rx();
        true -> ok
@@ -216,10 +261,7 @@ enable_rx() ->
     clear_rx_flags(),
     call({write, sys_ctrl, #{rxenab => 2#1}}).
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Disables the reception on the pmod
-%% @end
-%% ---------------------------------------------------------------------------------------
 disable_rx() ->
     call({write, sys_ctrl, #{trxoff => 2#1}}).
 
@@ -242,20 +284,15 @@ wait_for_reception() ->
         _ -> error({error_wait_for_reception})
     end.
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Set the frame wait timeout and enables it
-%% @end
-%% ---------------------------------------------------------------------------------------
--spec set_frame_timeout(Timeout :: miliseconds()) -> ok.
+-spec set_frame_timeout(Timeout) -> Result when
+      Timeout :: miliseconds(),
+      Result  :: ok.
 set_frame_timeout(Timeout) -> 
     write(rx_fwto, #{rxfwto => Timeout}),
     write(sys_cfg, #{rxwtoe => 2#1}). % enable receive wait timeout
 
-%% ---------------------------------------------------------------------------------------
-%% @doc Performs a reset of the IC following the procedure described in section 7.2.50.1 
-%%
-%% @end
-%% ---------------------------------------------------------------------------------------
+%% @doc Performs a reset of the IC following the procedure (cf. sec. 7.2.50.1) 
 softreset() -> 
     write(pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write(pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
@@ -263,9 +300,19 @@ softreset() ->
 
 
 clear_rx_flags() -> 
-    write(sys_status, #{rxsfdto => 2#1, rxpto => 2#1, rxrfto => 2#1, rxrfsl => 2#1, rxfce => 2#1, rxphe => 2#1, rxprd => 2#1, rxdsfdd => 2#1, rxphd => 2#1, rxdfr => 2#1, rxfcg => 2#1}).
+    write(sys_status, #{rxsfdto => 2#1, 
+                        rxpto => 2#1,
+                        rxrfto => 2#1,
+                        rxrfsl => 2#1,
+                        rxfce => 2#1,
+                        rxphe => 2#1,
+                        rxprd => 2#1,
+                        rxdsfdd => 2#1,
+                        rxphd => 2#1,
+                        rxdfr => 2#1,
+                        rxfcg => 2#1}).
 
-%--- Callbacks -----------------------------------------------------------------
+%--- gen_server Callbacks ------------------------------------------------------
 
 %% @private
 init(Slot) ->
@@ -287,13 +334,20 @@ init(Slot) ->
     {ok, #{bus => Bus}}.
 
 %% @private
-handle_call({read, RegFileID}, _From, #{bus := Bus} = State) -> {reply, read_reg(Bus, RegFileID), State};
-handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State) -> {reply, write_reg(Bus, RegFileID, Value), State};
-handle_call({write_tx, Value}, _From, #{bus := Bus} = State) -> {reply, write_tx_data(Bus, Value), State};
-handle_call({transmit, Data, Options}, _From, #{bus := Bus} = State) -> {reply, tx(Bus, Data, Options), State};
-handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) -> {reply, delayed_tx(Bus, Data, Delay), State};
-handle_call({get_rx_data}, _From, #{bus := Bus} = State) -> {reply, get_rx_data(Bus), State};
-handle_call(Request, _From, _State) -> error({unknown_call, Request}).
+handle_call({read, RegFileID}, _From, #{bus := Bus} = State)               -> 
+    {reply, read_reg(Bus, RegFileID), State};
+handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State)       -> 
+    {reply, write_reg(Bus, RegFileID, Value), State};
+handle_call({write_tx, Value}, _From, #{bus := Bus} = State)               -> 
+    {reply, write_tx_data(Bus, Value), State};
+handle_call({transmit, Data, Options}, _From, #{bus := Bus} = State)       -> 
+    {reply, tx(Bus, Data, Options), State};
+handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) -> 
+    {reply, delayed_tx(Bus, Data, Delay), State};
+handle_call({get_rx_data}, _From, #{bus := Bus} = State)                   -> 
+    {reply, get_rx_data(Bus), State};
+handle_call(Request, _From, _State)                                        -> 
+    error({unknown_call, Request}).
 
 %% @private
 handle_cast(Request, _State) -> error({unknown_cast, Request}).
@@ -305,10 +359,8 @@ call(Call) ->
     gen_server:call(Dev#device.pid, Call).
 
 
-%% ---------------------------------------------------------------------------------------
 %% @doc Varify the dev_id register of the pmod
 %% @returns ok if the value is correct, otherwise the value read
-%% ---------------------------------------------------------------------------------------
 verify_id(Bus) ->
     #{ridtag := RIDTAG, model := MODEL} = read_reg(Bus, dev_id),
     case {RIDTAG, MODEL} of
@@ -316,20 +368,16 @@ verify_id(Bus) ->
         _ -> {RIDTAG, MODEL}
     end.
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% Performs a softreset on the pmod
-%% ---------------------------------------------------------------------------------------
 -spec softreset(Bus::grisp_spi:ref()) -> ok.
 softreset(Bus) ->
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% Writes the default values described in section 2.5.5 of the user manual
-%% ---------------------------------------------------------------------------------------
 -spec write_default_values(Bus::grisp_spi:ref()) -> ok.
 write_default_values(Bus) ->
     write_reg(Bus, lde_if, #{lde_cfg1 => #{ntm => 16#D}, lde_cfg2 => 16#1607}),
@@ -340,9 +388,7 @@ write_default_values(Bus) ->
     write_reg(Bus, tx_cal, #{tc_pgdelay => 16#B5}),
     write_reg(Bus, fs_ctrl, #{fs_plltune => 16#BE}).
 
-%% ---------------------------------------------------------------------------------------
 %% @private
-%% ---------------------------------------------------------------------------------------
 config(Bus) ->
     write_reg(Bus, ext_sync, #{ec_ctrl => #{pllldt => 2#1}}),
     %write_reg(Bus, pmsc, #{pmsc_ctrl1 => #{lderune => 2#0}}),
@@ -357,11 +403,9 @@ config(Bus) ->
     write_reg(Bus, tx_fctrl, #{txpsr => 2#10}). % Setting preamble symbols to 1024
     
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% Load the microcode from ROM to RAM
 %% It follows the steps described in section 2.5.5.10 of the DW1000 user manual
-%% ---------------------------------------------------------------------------------------
 ldeload(Bus) ->
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{otp => 2#1, res8 => 2#1}}), % Writes 0x0301 in pmsc_ctrl0
@@ -370,19 +414,15 @@ ldeload(Bus) ->
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{sysclks => 2#0}}), % Writes 0x0200 in pmsc_ctrl0
     write_reg(Bus, pmsc, #{pmsc_ctrl0 => #{res8 => 2#0}}). 
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% If no frame is transmitted before AUTOACK, then the SFD isn't properly set
 %% (cf. section 5.3.1.2 SFD initialisation)
-%% ---------------------------------------------------------------------------------------
 setup_sfd(Bus) ->
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1, trxoff => 2#1}).
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% Transmit the data using UWB
 %% @param Options is used to set options about the transmission like a transmission delay, etc.
-%% ---------------------------------------------------------------------------------------
 -spec tx(_, Data :: bitstring(), Options :: #tx_opts{}) -> ok.
 tx(Bus, Data, #tx_opts{wait4resp = Wait4resp, w4r_tim = W4rTim, txdlys = TxDlys, tx_delay = TxDelay}) -> 
     % Writing the data that will be sent (w/o CRC)
@@ -400,10 +440,8 @@ tx(Bus, Data, #tx_opts{wait4resp = Wait4resp, w4r_tim = W4rTim, txdlys = TxDlys,
     write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1, wait4resp => Wait4resp, txdlys => TxDlys}). % start transmission and some options
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% Transmit the data with a specified delay using UWB
-%% ---------------------------------------------------------------------------------------
 delayed_tx(Bus, Data, Delay) ->
     write_reg(Bus, dx_time, #{dx_time => Delay}),
     DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
@@ -411,27 +449,22 @@ delayed_tx(Bus, Data, Delay) ->
     write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tflen => DataLength}),
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1, txdlys => 2#1}). % start transmission
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% Get the received data (without the CRC bytes) stored in the rx_buffer
-%% ---------------------------------------------------------------------------------------
 get_rx_data(Bus) ->
     #{rxflen := FrameLength} = read_reg(Bus, rx_finfo),
     Frame = read_rx_data(Bus, FrameLength-2), % Remove the CRC bytes
     {FrameLength, Frame}.
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Reverse the byte order of the bitstring given in the argument 
 %% @param Bin a bitstring
-%% ---------------------------------------------------------------------------------------
 reverse(Bin) -> reverse(Bin, <<>>).
 reverse(<<Bin:8>>, Acc) -> 
     <<Bin, Acc/binary>>;
 reverse(<<Bin:8, Rest/bitstring>>, Acc) -> 
     reverse(Rest, <<Bin, Acc/binary>>).
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Creates the header of the SPI transaction between the GRiSP and the pmod
 %%
@@ -441,11 +474,9 @@ reverse(<<Bin:8, Rest/bitstring>>, Acc) ->
 %% @param Op an atom (either <i>read</i> or <i>write</i>
 %% @param RegFileID an atom representing the register file
 %% @returns a formated header of <b>1 byte</b> long as described in the user manual
-%% ---------------------------------------------------------------------------------------
 header(Op, RegFileID) ->
     <<(rw(Op)):1, 2#0:1, (regFile(RegFileID)):6>>.
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Creates the header of the SPI transaction between the GRiSP and the pmod
 %%
@@ -457,7 +488,6 @@ header(Op, RegFileID) ->
 %% @param RegFileID an atom representing the register file
 %% @param SubRegister an atom representing the sub-register
 %% @returns a formated header of <b>2 byte</b> long as described in the user manual
-%% ---------------------------------------------------------------------------------------
 header(Op, RegFileID, SubRegister) -> 
     case subReg(SubRegister) < 127 of
         true -> header(Op, RegFileID, SubRegister, 2);
@@ -473,10 +503,8 @@ header(Op, RegFileID, SubRegister, 3) ->
        2#1:1, LowOrder:7,
        HighOrder:8>>.
 
-%% ---------------------------------------------------------------------------------------
 %% @private
 %% @doc Read the values stored in a register file
-%% ---------------------------------------------------------------------------------------
 read_reg(Bus, lde_ctrl) -> read_reg(Bus, lde_if);
 read_reg(Bus, lde_if) ->
     lists:foldl(fun(Elem, Acc) ->
@@ -500,19 +528,15 @@ read_sub_reg(Bus, RegFileID, SubRegister) ->
     reg(decode, SubRegister, Resp).
 
 
-%% ---------------------------------------------------------------------------------------
 %% @doc get the received data 
 %% @param Length is the total length of the data we are trying to read
-%% ---------------------------------------------------------------------------------------
 read_rx_data(Bus, Length) ->
     Header = header(read, rx_buffer),
     [Resp] = grisp_spi:transfer(Bus, [{?SPI_MODE, Header, 1, Length}]),
     Resp.
 
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
-%% ---------------------------------------------------------------------------------------
 %% @doc used to write the values in the map given in the Value argument
-%% ---------------------------------------------------------------------------------------
 -spec write_reg(Bus::grisp_spi:ref(), RegFileID::regFileID(), Value::map()) -> ok | {error, any()}.
 % Write each sub-register one by one.
 % If the user tries to write in a read-only sub-register, an error is thrown 
@@ -539,10 +563,8 @@ write_reg(Bus, RegFileID, Value) ->
     _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Body/binary>>, 1+regSize(RegFileID), 0}]),
     ok.
 
-%% ---------------------------------------------------------------------------------------
 %% @doc write_tx_data/2 sends data (Value) in the register tx_buffer
 %% @param Value is the data to be written. It must be a binary and have a size of maximum 1024 bits
-%% ---------------------------------------------------------------------------------------
 write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
     Header = header(write, tx_buffer),
     Length = byte_size(Value),
@@ -550,13 +572,12 @@ write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
     _ = grisp_spi:transfer(Bus, [{?SPI_MODE, <<Header/binary, Value/binary>>, 1+Length, 0}]),
     ok.
 
-%% ----- Register mapping ----------------------------------------------------------------
-%% ---------------------------------------------------------------------------------------
+%---- Register mapping --------------------------------------------------------
+
 %% @doc Used to either decode the data returned by the pmod or to encode to data that will be sent to the pmod
 %% 
 %% The transmission on the MISO line is done byte by byte starting from the lowest rank byte to the highest rank
 %% Example: dev_id value is 0xDECA0130 but 0x3001CADE is transmitted over the MISO line
-%% ---------------------------------------------------------------------------------------
 -spec reg(encode|decode, Register::regFileID(), bitstring()|map()) -> bitstring()|map().
 reg(encode, SubRegister, Value) when ?READ_ONLY_SUB_REG(SubRegister) -> error({writing_read_only_sub_register, SubRegister, Value});
 reg(decode, dev_id, Resp) -> 

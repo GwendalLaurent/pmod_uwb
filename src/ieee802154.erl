@@ -142,6 +142,9 @@ idle({call, From}, rx_on, #{mac_layer := MacState, input_callback := Callback} =
     {ok, NewMacState} = gen_mac_layer:turn_on_rx(MacState, Callback),
     {next_state, rx, Data#{mac_layer => NewMacState}, {reply, From, ok}}; 
 
+idle({call, From}, rx_off, Data) ->
+    {keep_state, Data, {reply, From, ok}};
+
 idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data) -> 
     {next_state, tx, Data, [{next_event, internal, {tx, idle, FrameControl, FrameHeader, Payload, From}}]};
 
@@ -154,8 +157,8 @@ idle({call, From}, rx, #{mac_layer := MacState} = Data) -> % simple RX doesn't g
 idle(EventType, EventContent, Data) -> handle_event(EventType, EventContent, idle, Data).
 
 %---  RX State 
-rx(enter, _OldState, Data) ->
-    {next_state, rx, Data};
+% rx(enter, _OldState, Data) ->
+%     {next_state, rx, Data};
 
 rx({call, From}, rx_on, Data) -> 
     {keep_state, Data, {reply, From, ok}};
@@ -169,17 +172,14 @@ rx({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data)->
     % {next_state, tx, Data#{mac_layer => NewMacState}, [{next_event, internal, {tx, rx, FrameControl, FrameHeader, Payload, From}}]}; 
     {next_state, tx, Data, [{next_event, internal, {tx, rx, FrameControl, FrameHeader, Payload, From}}]}; 
 
-rx(_EventType, {rx, From}, #{mac_layer := MacState} = Data) ->
-    case gen_mac_layer:rx(MacState) of
-        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {ok, {FrameControl, FrameHeader, Payload}}}]};
-        {error, NewMacState, Error} -> {next_state, idle, Data#{mac_layer => NewMacState}, [{reply, From, {error, Error}}]}
-    end;
+rx(_EventType, {rx, From}, Data) ->
+    {keep_state, Data, {reply, From, {error, rx_already_on}}};
 
 rx(EventType, EventContent, Data) -> handle_event(EventType, EventContent, rx, Data).
 
 %---  TX State
-tx(enter, _OldState, Data) ->
-    {next_state, tx, Data};
+% tx(enter, _OldState, Data) ->
+%     {next_state, tx, Data};
 
 tx(_EventType, {tx, OldState, FrameControl, MacHeader, Payload, From}, #{mac_layer := MacLayerState} = Data) -> 
     case gen_mac_layer:tx(MacLayerState, FrameControl, MacHeader, Payload) of

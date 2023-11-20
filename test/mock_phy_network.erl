@@ -21,6 +21,7 @@
 -export([handle_call/3]).
 -export([handle_cast/2]).
 -export([handle_info/2]).
+-export([terminate/2]).
 
 start_link(_Connector, Params) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Params, []).
@@ -35,11 +36,12 @@ transmit(Frame, Options) ->
     gen_server:call(?MODULE, {transmit, Frame, Options}).
 
 reception() -> 
+    #{rxfwto := RXFWTO} = gen_server:call(?MODULE, {read, rx_fwto}),
     Ref = make_ref(),
     gen_server:cast(?MODULE, {reception, Ref, self()}),
     receive 
         {Ref, Ret} -> Ret
-    after 5000 -> rxfwto
+    after RXFWTO -> rxfwto
     end.
 
 reception(_RxOpts) ->
@@ -58,6 +60,7 @@ write(Reg, Value) ->
 
 init(#{network := NetworkNode}) ->
     {network_loop, NetworkNode} ! {register, node()},
+    ets:new(callback_table, [public, named_table]),
     {ok, #{regs => pmod_uwb_registers:default(), network => NetworkNode}}.
 
 handle_call({read, Reg}, _From, #{regs := Regs} = State) -> {reply, pmod_uwb_registers:get_value(Regs, Reg), State};
@@ -73,7 +76,13 @@ handle_info({frame, Frame}, #{network := NetworkNode, waiting := {From, Ref}, re
         ok -> ack_reply(NetworkNode, Frame), From ! {Ref, {byte_size(Frame), Frame}};
         _ -> ok
     end,
-    {noreply, maps:remove(waiting, State)}.
+    {noreply, maps:remove(waiting, State)};
+handle_info({frame, _}, State) ->
+    {noreply, State}.
+
+terminate(Reason, #{network := NetworkNode}) ->
+    io:format("Terminate: ~w", [Reason]),
+    {network_loop, NetworkNode} ! {unreg, node()}.
 
 %--- Internal -------------------------------------------------------------------
 tx(NetworkNode, Frame) ->

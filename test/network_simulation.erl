@@ -26,6 +26,7 @@ loop(#{nodes := Nodes} = State) ->
     receive
         {ping, Pid, Node} -> {Pid, Node} ! pong, loop(State);
         {register, Name} -> loop(State#{nodes => [Name | Nodes]});
+        {unreg, Name} -> loop(State#{nodes => lists:filter(fun(Elem) -> Elem =/= Name end, Nodes)});
         {tx, Frame} -> broadcast(Nodes, Frame), loop(State);
         {stop} -> ok
     end.
