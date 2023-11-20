@@ -80,63 +80,54 @@ decode(Data) ->
 % @end
 %-------------------------------------------------------------------------------
 -spec decode_rest(FrameControl :: frame_control(), Seqnum::integer(), Rest::bitstring()) -> {FrameControl::frame_control(), MacHeader::mac_header(), Payload::bitstring()}.  
-decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) ->
+decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) -> % Might cause an issue if piggybacking is used (allowed in IEEE 802.15.4?)
     {FrameControl, #mac_header{seqnum = Seqnum}, <<>>};
 decode_rest(FrameControl, Seqnum, Rest) ->
-    [DestPan_, DestAddr, SrcPan_, SrcAddr, Payload] = lists:flatten(decode_addrs(dest_pan_id, Rest, FrameControl)),
-    DestPan = case {DestPan_, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.frame_type} of 
-                  {<<>>, ?ENABLED, _} -> SrcPan_; % Can always deduce if the compression is enabled
-                  % {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression isn't enabled and ACK => can't deduce
-                  {<<>>, ?DISABLED, ?FTYPE_BEACON} -> <<>>; % if compression isn't enabled and BEACON => can't deduce
-                  {<<>>, ?DISABLED, _} -> SrcPan_; % Other wise destination is PAN coord with same PANID as SRC
-                  {_, _, _} -> DestPan_
-              end,
-    SrcPan = case {SrcPan_, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.frame_type} of
-                 {<<>>, ?ENABLED, _} -> DestPan;
-                 % {<<>>, ?DISABLED, ?FTYPE_ACK} -> <<>>; % if compression is disabled and frame type is an ACK => can't deduce (e.g. ACK comming from outside the PAN
-                 {<<>>, ?DISABLED, _} -> DestPan;
-                 {_, _, _} -> SrcPan_
-             end,
-    MacHeader = #mac_header{seqnum = Seqnum, dest_pan = DestPan, dest_addr = DestAddr, src_pan = SrcPan, src_addr = SrcAddr},
+    {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload} = decode_mac_header(FrameControl#frame_control.dest_addr_mode, FrameControl#frame_control.src_addr_mode, FrameControl#frame_control.pan_id_compr, Rest),
+    MacHeader = #mac_header{seqnum = Seqnum, dest_pan = reverse_byte_order(DestPAN), dest_addr = reverse_byte_order(DestAddr), src_pan = reverse_byte_order(SrcPAN), src_addr = reverse_byte_order(SrcAddr)},
     {FrameControl, MacHeader, Payload}.
 
+% Note extended addresses and PAN ID are used in the case of inter-PAN communication
+% In inter PAN communication, it can be omitted but it's not mandatory
+-spec decode_mac_header(DestAddrMode::term(), SrcAddrMode::term(), PanIdCompr::term(), Bits::bitstring()) -> {DestPAN::bitstring(), DestAddr::bitstring(), SrcPAN::bitstring(), SrcAddr::bitstring(), Payload::bitstring()}.
+decode_mac_header(?EXTENDED, ?EXTENDED, ?DISABLED, <<DestPAN:16/bitstring, DestAddr:64/bitstring, SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) -> 
+    {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload};
 
-%-------------------------------------------------------------------------------
-% @private
-% @doc decode the address fields present in the remaining sequence of bits based on the settings inside Framecontrol
-%
-% The first parameter is an atom representing the the field that should be parsed next
-% @end
-%-------------------------------------------------------------------------------
-decode_addrs(dest_pan_id, Rest, FrameControl) ->
-    case FrameControl#frame_control.dest_addr_mode of
-        ?NONE -> [<<>>, <<>>, decode_addrs(src_pan_id, Rest, FrameControl)];
-        _ -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, 
-             [reverse_byte_order(PanID), decode_addrs(dest_addr, Tail, FrameControl)]
-    end;
-decode_addrs(dest_addr, Rest, FrameControl) ->
-    case FrameControl#frame_control.dest_addr_mode of
-        ?SHORT_ADDR -> <<Addr:16/bitstring, Tail/bitstring>> = Rest, 
-                       [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)];
-        ?EXTENDED -> <<Addr:64/bitstring, Tail/bitstring>> = Rest, 
-                     [reverse_byte_order(Addr), decode_addrs(src_pan_id, Tail, FrameControl)];
-        _ -> io:format("Frame control dest_addr: ~w~n", [FrameControl#frame_control.dest_addr_mode])
-    end;
-decode_addrs(src_pan_id, Rest, FrameControl) ->
-    case {FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.src_addr_mode} of
-        {?ENABLED, _} -> [<<>>, decode_addrs(src_addr, Rest, FrameControl)];
-        {_, ?NONE} -> [<<>>, <<>>, Rest];
-        _ -> <<PanID:16/bitstring, Tail/bitstring>> = Rest, % If compr disabled and src_addr_mode isn't none
-             [reverse_byte_order(PanID), decode_addrs(src_addr, Tail, FrameControl)]
-    end;
-decode_addrs(src_addr, Rest, FrameControl) ->
-    case FrameControl#frame_control.src_addr_mode of
-        ?NONE -> [<<>>, Rest]; 
-        ?SHORT_ADDR -> <<Addr:16/bitstring, Payload/bitstring>> = Rest, 
-                       [reverse_byte_order(Addr), Payload];
-        ?EXTENDED -> <<Addr:64/bitstring, Payload/bitstring>> = Rest, 
-                     [reverse_byte_order(Addr), Payload]
-    end.
+decode_mac_header(?EXTENDED, ?EXTENDED, ?ENABLED, <<DestPAN:16/bitstring, DestAddr:64/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, DestPAN, SrcAddr, Payload};
+
+decode_mac_header(?EXTENDED, ?SHORT_ADDR, ?DISABLED, <<DestPAN:16/bitstring, DestAddr:64/bitstring, SrcPAN:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(?EXTENDED, ?SHORT_ADDR, ?ENABLED, <<DestPAN:16/bitstring, DestAddr:64/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, DestPAN, SrcAddr, Payload};
+
+decode_mac_header(?EXTENDED, ?NONE, _, <<DestPAN:16/bitstring, DestAddr:64/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, <<>>, <<>>, Payload};
+
+decode_mac_header(?SHORT_ADDR, ?EXTENDED, ?DISABLED, <<DestPAN:16/bitstring, DestAddr:16/bitstring, SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(?SHORT_ADDR, ?EXTENDED, ?ENABLED, <<DestPAN:16/bitstring, DestAddr:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, DestPAN, SrcAddr, Payload};
+
+decode_mac_header(?SHORT_ADDR, ?SHORT_ADDR, ?DISABLED, <<DestPAN:16/bitstring, DestAddr:16/bitstring, SrcPAN:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(?SHORT_ADDR, ?SHORT_ADDR, ?ENABLED, <<DestPAN:16/bitstring, DestAddr:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, DestPAN, SrcAddr, Payload};
+
+decode_mac_header(?SHORT_ADDR, ?NONE, _, <<DestPAN:16/bitstring, DestAddr:16/bitstring, Payload/bitstring>>) ->
+    {DestPAN, DestAddr, <<>>, <<>>, Payload};
+
+decode_mac_header(?NONE, ?EXTENDED, _, <<SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
+    {<<>>, <<>>, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(?NONE, ?SHORT_ADDR, _, <<SrcPAN:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+    {<<>>, <<>>, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(_SrcAddrMode, _DestAddrMode, _PanIdCompr, _Bits) ->
+    error(internal_decoding_error).
 
 %-------------------------------------------------------------------------------
 % @private
@@ -165,6 +156,7 @@ decode_frame_control(FC) ->
 %--- Tool functions ------------------------------------------------------------
 
 reverse_byte_order(Bitstring) -> reverse_byte_order(Bitstring, <<>>).
+reverse_byte_order(<<>>, Acc) -> Acc;
 reverse_byte_order(<<Head:8>>, Acc) ->
     <<Head:8, Acc/bitstring>>;
 reverse_byte_order(<<Head:8, Tail/bitstring>>, Acc) ->
