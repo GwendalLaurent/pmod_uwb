@@ -127,7 +127,6 @@ decode_mac_header(?NONE, ?SHORT_ADDR, _, <<SrcPAN:16/bitstring, SrcAddr:16/bitst
     {<<>>, <<>>, SrcPAN, SrcAddr, Payload};
 
 decode_mac_header(_SrcAddrMode, _DestAddrMode, _PanIdCompr, _Bits) ->
-    io:format("Error"),
     error(internal_decoding_error).
 
 %-------------------------------------------------------------------------------
