@@ -22,6 +22,14 @@
 -export([encode_decode_src_pan_coord_pan_id_compr/1]).
 -export([encode_decode_dest_pan_coord/1]).
 -export([encode_decode_dest_pan_coord_pan_id_compr/1]).
+-export([encode_decode_ext_address_pan_id_compr/1]).
+-export([encode_decode_short_src_address/1]).
+-export([encode_decode_short_src_address_pan_id_compr/1]).
+-export([encode_decode_extended_dest_no_src_addr/1]).
+-export([encode_decode_short_dest_ext_src_no_compr/1]).
+-export([encode_decode_short_dest_ext_src_pan_compr/1]).
+-export([encode_decode_no_dest_ext_src/1]).
+-export([encode_decode_invalid_header_fields_value/1]).
 
 -export([mac_get_set_ext_mac_addr/1]).
 -export([mac_get_set_short_mac_addr/1]).
@@ -29,6 +37,8 @@
 -export([mac_get_set_unknown_value/1]).
 
 -export([mac_tx_invalid_address/1]).
+
+-compile({nowarn_unused_function, [debug_bitstring_hex/1]}).
 
 all() -> [{group, encode_decode},
           {group, mac_get_set},
@@ -47,7 +57,15 @@ groups() -> [{encode_decode, [parallel], [mac_message_from_api,
                                           encode_decode_src_pan_coord,
                                           encode_decode_src_pan_coord_pan_id_compr,
                                           encode_decode_dest_pan_coord,
-                                          encode_decode_dest_pan_coord_pan_id_compr]},
+                                          encode_decode_dest_pan_coord_pan_id_compr,
+                                          encode_decode_ext_address_pan_id_compr,
+                                          encode_decode_short_src_address,
+                                          encode_decode_short_src_address_pan_id_compr,
+                                          encode_decode_extended_dest_no_src_addr,
+                                          encode_decode_short_dest_ext_src_no_compr,
+                                          encode_decode_short_dest_ext_src_pan_compr,
+                                          encode_decode_no_dest_ext_src,
+                                          encode_decode_invalid_header_fields_value]},
              {mac_get_set, [parallel], [mac_get_set_ext_mac_addr,
                                         mac_get_set_short_mac_addr,
                                         mac_get_set_pan_id,
@@ -165,6 +183,70 @@ encode_decode_dest_pan_coord_pan_id_compr(_Config) ->
     <<16#4180:16, 0:8, 16#FFFF:16, 16#CADE:16, Payload/bitstring>> = Encoded,
     {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
 
+encode_decode_ext_address_pan_id_compr(_Config) -> 
+    FrameControl = #frame_control{dest_addr_mode = ?EXTENDED, src_addr_mode = ?EXTENDED, pan_id_compr = ?ENABLED},
+    MacHeader = #mac_header{dest_pan = <<16#CAFE:16>>, dest_addr = <<16#DECA000000000001:64>>, src_addr = <<16#DECA000000000002:64>>, src_pan = <<16#CAFE:16>>},
+    Payload = <<"Extended address and pan id compression">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#41CC:16, 0:8, 16#FECA:16, 16#010000000000CADE:64, 16#020000000000CADE:64, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_short_src_address(_Config) -> 
+    FrameControl = #frame_control{dest_addr_mode = ?EXTENDED, src_addr_mode = ?SHORT_ADDR},
+    MacHeader = #mac_header{dest_pan = <<16#CAFE:16>>, dest_addr = <<16#DECA000000000001:64>>, src_addr = <<16#DE02:16>>, src_pan = <<16#CAFE:16>>},
+    Payload = <<"Extended dest. address and short src. address">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#018C:16, 0:8, 16#FECA:16, 16#010000000000CADE:64, 16#FECA:16, 16#02DE:16, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_short_src_address_pan_id_compr(_Config) -> 
+    FrameControl = #frame_control{dest_addr_mode = ?EXTENDED, src_addr_mode = ?SHORT_ADDR, pan_id_compr = ?ENABLED},
+    MacHeader = #mac_header{dest_pan = <<16#CAFE:16>>, dest_addr = <<16#DECA000000000001:64>>, src_addr = <<16#DE02:16>>, src_pan = <<16#CAFE:16>>},
+    Payload = <<"Extended address and pan id compression">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#418C:16, 0:8, 16#FECA:16, 16#010000000000CADE:64, 16#02DE:16, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_extended_dest_no_src_addr(_Config) ->
+    FrameControl = #frame_control{dest_addr_mode = ?EXTENDED, src_addr_mode = ?NONE},
+    MacHeader = #mac_header{dest_pan = <<16#CAFE:16>>, dest_addr = <<16#DECA000000000001:64>>, src_addr = <<>>, src_pan = <<>>},
+    Payload = <<"Extended address and missing src fields">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#010C:16, 0:8, 16#FECA:16, 16#010000000000CADE:64, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_short_dest_ext_src_no_compr(_Config) ->
+    FrameControl = #frame_control{dest_addr_mode = ?SHORT_ADDR, src_addr_mode = ?EXTENDED},
+    MacHeader = #mac_header{dest_pan = <<16#CAFE:16>>, dest_addr = <<16#DE01:16>>, src_addr = <<16#DECA000000000001:64>>, src_pan = <<16#BAD0:16>>},
+    Payload = <<"Short dest addr - ext src addr">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#01C8:16, 0:8, 16#FECA:16, 16#01DE:16, 16#D0BA:16, 16#010000000000CADE:64, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_short_dest_ext_src_pan_compr(_Config) ->
+    FrameControl = #frame_control{dest_addr_mode = ?SHORT_ADDR, src_addr_mode = ?EXTENDED, pan_id_compr = ?ENABLED},
+    MacHeader = #mac_header{dest_pan = <<16#CAFE:16>>, dest_addr = <<16#DE01:16>>, src_addr = <<16#DECA000000000001:64>>, src_pan = <<16#CAFE:16>>},
+    Payload = <<"Short dest addr - ext src addr - pan compr">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#41C8:16, 0:8, 16#FECA:16, 16#01DE:16, 16#010000000000CADE:64, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_no_dest_ext_src(_Config) ->
+    FrameControl = #frame_control{dest_addr_mode = ?NONE, src_addr_mode = ?EXTENDED},
+    MacHeader = #mac_header{dest_pan = <<>>, dest_addr = <<>>, src_addr = <<16#DECA000000000001:64>>, src_pan = <<16#CAFE:16>>},
+    Payload = <<"no dest addr - ext src addr">>,
+    Encoded = mac_frame:encode(FrameControl, MacHeader, Payload),
+    <<16#01C0:16, 0:8, 16#FECA:16, 16#010000000000CADE:64, Payload/bitstring>> = Encoded,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Encoded).
+
+encode_decode_invalid_header_fields_value(_Config) ->
+    FrameControl = #frame_control{src_addr_mode = 9, dest_addr_mode = 9},
+    MacHeader = #mac_header{dest_pan = <<>>, dest_addr = <<>>, src_addr = <<16#DECA000000000001:64>>, src_pan = <<16#CAFE:16>>},
+    Payload = <<"Invalid values">>,
+    InvalidFrame = mac_frame:encode(FrameControl, MacHeader, Payload),
+    {'EXIT', {internal_decoding_error, _}} = catch mac_frame:decode(InvalidFrame), 
+    ok. 
+
 %--- Test cases: mac_get_set --------------------------------------------------
 mac_get_set_ext_mac_addr(Config) ->
     MacState = ?config(mac_state, Config),
@@ -196,3 +278,7 @@ mac_get_set_unknown_value(Config) ->
 mac_tx_invalid_address(Config) ->
     MacState = ?config(mac_state, Config),
     {error, _State, invalid_address} = gen_mac_layer:tx(MacState, #frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE}, #mac_header{}, <<"Invalid address">>).
+
+%--- Utils --------------------------------------------------------------------
+debug_bitstring_hex(Bitstring) ->
+    lists:flatten([io_lib:format("16#~2.16.0B ", [X]) || <<X>> <= Bitstring]).
