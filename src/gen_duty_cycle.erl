@@ -21,14 +21,14 @@
 -callback on(State::term(), Callback::function()) -> {ok, State::term()}.
 -callback off(State::term()) -> {ok, State::term()}.
 % Add suspend and resume later
--callback tx(State::term(), Frame::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
+-callback tx(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
 -callback rx(State::term()) -> {ok, State::term(), Frame::bitstring()} | {error, State::term(), Error::atom()}.
 -callback terminate(State::term(), Reason::term()) -> ok.
 
 -export([start/2]).
 -export([turn_on/2]).
 -export([turn_off/1]).
--export([tx_request/2]).
+-export([tx_request/5]).
 -export([rx_request/1]).
 -export([stop/2]).
 
@@ -61,9 +61,9 @@ turn_off({Mod, Sub}) ->
 % <li> `frame_too_long': The frame was too long for the CAP or GTS</li>
 % <li> `channel_access_failure': the CSMA-CA algorithm failed</li>
 % @end
--spec tx_request(State::term(), Frame::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
-tx_request({Mod, Sub}, Frame) ->
-    case Mod:tx(Sub, Frame) of
+-spec tx_request(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
+tx_request({Mod, Sub}, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) ->
+    case Mod:tx(Sub, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) of
         {ok, Sub2} -> {ok, {Mod, Sub2}};
         {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
     end.

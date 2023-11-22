@@ -7,7 +7,7 @@
 -export([init/1]).
 -export([on/2]).
 -export([off/1]).
--export([tx/2]).
+-export([tx/5]).
 -export([rx/1]).
 -export([terminate/2]).
 
@@ -23,11 +23,12 @@
 %% @end
 
 %--- Records ----------------------------------------------------------
--record(state, {sniff_ont, sniff_offt, phy_layer, loop_pid, callback}).
+-record(state, {sniff_ont, sniff_offt, phy_layer, loop_pid, callback, mac_tx_state}).
 
 %--- gen_duty_cycle callbacks -------------------------------------------
 init(PhyMod) ->
-    #state{sniff_ont = 3, sniff_offt = 4, phy_layer = PhyMod, loop_pid = undefined, callback = undefined}.
+    MacTXState = gen_mac_tx:start(unslotted_CSMA, PhyMod),
+    #state{sniff_ont = 3, sniff_offt = 4, phy_layer = PhyMod, loop_pid = undefined, callback = undefined, mac_tx_state = MacTXState}.
 
 on(#state{phy_layer = PhyMod, sniff_ont = SNIFF_ONT, sniff_offt = SNIFF_OFFT} = State, Callback) ->
     LoopPid = turn_on_rx_loop(PhyMod, SNIFF_ONT, SNIFF_OFFT, Callback),
@@ -37,19 +38,19 @@ off(#state{phy_layer = PhyMod, loop_pid = LoopPid} = State) ->
     turn_off_rx_loop(PhyMod, LoopPid, shutdown),
     {ok, State#state{loop_pid = undefined}}.
 
--spec tx(State::term(), Frame::bitstring()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
-tx(#state{phy_layer = PhyMod, loop_pid = undefined} = State, Frame) ->
-    case tx_(PhyMod, Frame) of
-        ok -> {ok, State};
-        {error, Error} -> {error, State, Error}
+-spec tx(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
+tx(#state{phy_layer = PhyMod, mac_tx_state = MacTXState, loop_pid = undefined} = State, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) ->
+    case tx_(MacTXState, PhyMod, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) of
+        {ok, NewMacTxState} -> {ok, State#state{mac_tx_state = NewMacTxState}};
+        {error, NewMacTxState, Error} -> {error, State#state{mac_tx_state = NewMacTxState}, Error}
     end;
-tx(#state{phy_layer = PhyMod, loop_pid = LoopPid, callback = Callback, sniff_ont = SNIFF_ONT, sniff_offt = SNIFF_OFFT} = State, Frame) ->
+tx(#state{phy_layer = PhyMod, mac_tx_state = MacTXState, loop_pid = LoopPid, callback = Callback, sniff_ont = SNIFF_ONT, sniff_offt = SNIFF_OFFT} = State, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) ->
     suspend_rx_loop(PhyMod, LoopPid),
-    TxStatus = tx_(PhyMod, Frame),
+    TxStatus = tx_(MacTXState, PhyMod, Frame, MacMinBE, MacMaxCSMABackoffs, CW0),
     NewLoopPid = resume_rx_loop(PhyMod, LoopPid, SNIFF_ONT, SNIFF_OFFT, Callback),
     case TxStatus of
-        ok -> {ok, State#state{loop_pid = NewLoopPid}};
-        {error, Error} -> {error, State#state{loop_pid = NewLoopPid}, Error}
+        {ok, NewMacTxState} -> {ok, State#state{loop_pid = NewLoopPid, mac_tx_state = NewMacTxState}};
+        {error, NewMacTxState, Error} -> {error, State#state{loop_pid = NewLoopPid, mac_tx_state = NewMacTxState}, Error}
     end.
 
 -spec rx(State::term()) -> {ok, State::term(), Frame::bitstring()} | {error, State::term(), Error::atom}.
@@ -104,23 +105,42 @@ suspend_rx_loop(PhyMod, LoopPid) ->
 resume_rx_loop(PhyMod, _, SNIFF_ONT, SNIFF_OFFT, Callback) -> turn_on_rx_loop(PhyMod, SNIFF_ONT, SNIFF_OFFT, Callback). 
 
 % @private
-tx_(PhyMod, <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/binary>> = Frame) -> tx_ar(PhyMod, Frame, Seqnum, 0);
-tx_(PhyMod, Frame) ->
-    mac_tx:tx(PhyMod, Frame).
+% @returns {ok, NewMacTxState} | {error, NewMacTxState, Error}
+-spec tx_(MacTXState, PhyMod, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) -> {ok, MacTXState} | {error, MacTXState, Error} when
+      MacTXState         :: gen_mac_tx:state(),
+      PhyMod             :: module(),
+      Frame              :: bitstring(),
+      MacMinBE           :: pos_integer(),
+      MacMaxCSMABackoffs :: pos_integer(),
+      CW0                :: pos_integer(),
+      Error              :: atom().
+tx_(MacTXState, PhyMod, <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/binary>> = Frame, MacMinBE, MacMaxCSMABackoffs, CW0) -> tx_ar(MacTXState, PhyMod, Frame, Seqnum, 0, MacMinBE, MacMaxCSMABackoffs, CW0);
+tx_(MacTXState, _PhyMod, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) ->
+    gen_mac_tx:transmit(MacTXState, Frame, MacMinBE, MacMaxCSMABackoffs, CW0, #tx_opts{}).
 
 % @private
 % @doc This function transmits a frame with AR=1
 % If the ACK isn't received before the timeout, a retransmission is done
 % If the frame has been transmitted MACMAXFRAMERETRIES times then the error `no_ack' is returned
-% @end
-tx_ar(_, _, _, ?MACMAXFRAMERETRIES) ->  {error, no_ack};
-tx_ar(PhyMod, Frame, Seqnum, Retry) ->
-    case mac_tx:tx(PhyMod, Frame, #tx_opts{wait4resp = ?ENABLED}) of
-        ok -> 
+% @returns {ok, NewMacTxState} | {error, NewMacTxState, Error}
+-spec tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, MacMinBE, MacMaxCSMABackoffs, CW0) -> {ok, MacTxState} | {error, MacTxState, Error} when
+      MacTXState         :: gen_mac_tx:state(),
+      PhyMod             :: module(),
+      Frame              :: bitstring(),
+      Seqnum             :: non_neg_integer(),
+      Retry              :: non_neg_integer(),
+      MacMinBE           :: pos_integer(),
+      MacMaxCSMABackoffs :: pos_integer(),
+      CW0                :: pos_integer(),
+      Error              :: atom().
+tx_ar(MacTxState, _, _, _, ?MACMAXFRAMERETRIES, _, _, _) ->  {error, MacTxState, no_ack};
+tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, MacMinBE, MacMaxCSMABackoffs, CW0) ->
+    case gen_mac_tx:transmit(MacTXState, Frame, MacMinBE, MacMaxCSMABackoffs, CW0, #tx_opts{wait4resp = ?ENABLED}) of
+        {ok, NewMacTxState} -> 
             case PhyMod:reception(true) of
-                {_, <<_:16, Seqnum:8>>} -> ok;
-                _  -> tx_ar(PhyMod, Frame, Seqnum, Retry+1)
+                {_, <<_:16, Seqnum:8>>} -> {ok, NewMacTxState};
+                _  -> tx_ar(NewMacTxState, PhyMod, Frame, Seqnum, Retry+1, MacMinBE, MacMaxCSMABackoffs, CW0)
             end;
-        {error, _} -> tx_ar(PhyMod, Frame, Seqnum, Retry+1)
+        {error, NewMacTxState, _Error} -> tx_ar(NewMacTxState, PhyMod, Frame, Seqnum, Retry+1, MacMinBE, MacMaxCSMABackoffs, CW0)
     end.
 

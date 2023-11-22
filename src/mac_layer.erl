@@ -31,12 +31,13 @@ init(#{phy_layer := PhyMod, duty_cycle := DutyCycleMod}) ->
     PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
     PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1}),
     DutyCycleState = gen_duty_cycle:start(DutyCycleMod, PhyMod),
-    #{phy_layer => PhyMod, duty_cycle => DutyCycleState, retries => 0}. 
+    #{phy_layer => PhyMod, duty_cycle => DutyCycleState, retries => 0, attributes => default_attribute_values()}. 
 
 % @doc transmits a frame using the physical layer
 % @end
-tx(#{duty_cycle := DutyCycleState} = State, FrameControl, MacHeader, Payload) ->
-    case gen_duty_cycle:tx_request(DutyCycleState, mac_frame:encode(FrameControl, MacHeader, Payload)) of
+tx(#{duty_cycle := DutyCycleState, attributes := Attributes} = State, FrameControl, MacHeader, Payload) ->
+    #{mac_min_BE := MacMinBE, mac_max_csma_backoffs := MacMaxCSMABackoffs, cw0 := CW0} = Attributes,
+    case gen_duty_cycle:tx_request(DutyCycleState, mac_frame:encode(FrameControl, MacHeader, Payload), MacMinBE, MacMaxCSMABackoffs, CW0) of
         {ok, NewDutyCycleState} -> {ok, State#{duty_cycle => NewDutyCycleState}};
         {error, NewDutyCycleState, Error} -> {error, State#{duty_cycle => NewDutyCycleState}, Error}
     end.
@@ -73,14 +74,14 @@ get(#{phy_layer := PhyMod} = State, mac_extended_address) ->
     #{eui := EUI} = PhyMod:read(eui),
     {ok, State, EUI};
 get(#{phy_layer := PhyMod} = State, mac_short_address) ->
-    ct:pal("~w", [PhyMod:read(panadr)]),
     #{short_addr := ShortAddr} = PhyMod:read(panadr),
     {ok, State, ShortAddr};
 get(#{phy_layer := PhyMod} = State, mac_pan_id) ->
-    ct:pal("~w", [PhyMod:read(panadr)]),
     #{pan_id := PanId} = PhyMod:read(panadr),
     {ok, State, PanId};
-get(State, _Attribute) ->
+get(#{attributes := Attributes} = State, Attribute) when is_map_key(Attribute, Attributes) ->
+    {ok, State, maps:get(Attribute, Attributes)};
+get(State, _) ->
     {error, State, unsupported_attribute}.
 
 -spec set(State::term(), Attribute::gen_mac_layer:pibAttribute(), Value::term()) -> {ok, State::term()} | {error, State::term(), gen_mac_layer:pibSetError()}.
@@ -93,6 +94,8 @@ set(#{phy_layer := PhyMod} = State, mac_short_address, Value) ->
 set(#{phy_layer := PhyMod} = State, mac_pan_id, Value) ->
     PhyMod:write(panadr, #{pan_id => Value}),
     {ok, State};
+set(#{attributes := Attributes} = State, Attribute, Value) when is_map_key(Attribute, Attributes) ->
+    {ok, State#{attributes => maps:update(Attribute, Value, Attributes)}};
 set(State, _Attribute, _) ->
     {error, State, unsupported_attribute}. % TODO detect if PIB is a read only attribute
 
@@ -101,5 +104,13 @@ set(State, _Attribute, _) ->
 terminate(#{duty_cycle := DutyCycleState}, Reason) -> 
     gen_duty_cycle:stop(DutyCycleState, Reason).
 
+%--- Internal ------------------------------------------------------------------
 
+default_attribute_values() ->
+    #{
+      cw0 => 2, % cf. p.22 standard
+      mac_max_BE => 5,
+      mac_max_csma_backoffs => 4,
+      mac_min_BE => 3
+     }.
 

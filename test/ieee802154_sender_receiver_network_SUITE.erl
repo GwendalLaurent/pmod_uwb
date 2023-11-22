@@ -43,7 +43,7 @@ init_per_group(tx_rx_loop_on_reply, Config) ->
     [{net_pid, NetPid}, {network, Network}, {expected_frame, ExpectedFrame}, {reply, Reply} | Config];
 
 init_per_group(_, Config) ->
-    ExpectedFrame = {#frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED, ack_req = ?ENABLED}, #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, <<"Test">>},
+    ExpectedFrame = {#frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED}, #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, <<"Test">>},
     {NetPid, Network} = ieee802154_node:boot_network_node(),
     [{net_pid, NetPid}, {network, Network}, {expected_frame, ExpectedFrame} | Config].
 
@@ -105,7 +105,6 @@ sender(Config) ->
     {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
     ok = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]).
 
-
 receiver(Config) ->
     {_, Node} = ?config(receiver, Config),
     {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
@@ -127,6 +126,7 @@ outsider(Config) ->
     {_, Node} = ?config(outsider, Config),
     {error, rxfwto} = erpc:call(Node, ieee802154, reception, []).
 
+% in this test case, the sender is expecting an ACK but never receives one
 sender_no_ack(Config) ->
     ct:sleep(100),
     {_, Node} = ?config(sender_no_ack, Config),
