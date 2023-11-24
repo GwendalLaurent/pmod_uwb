@@ -12,15 +12,18 @@
 -export([receiver_callback/1]).
 -export([receiver_rx_loop_reply/1]).
 -export([outsider/1]).
+-export([sender_busy_medium/1]).
+-export([jammer/1]).
 
-all() -> [{group, simple_tx_rx}, {group, tx_rx_multiple_nodes}, {group, tx_rx_ack}, {group, tx_rx_no_ack}, {group, rx_loop_on}, {group, tx_rx_loop_on_reply}].
+all() -> [{group, simple_tx_rx}, {group, tx_rx_multiple_nodes}, {group, tx_rx_ack}, {group, tx_rx_no_ack}, {group, rx_loop_on}, {group, tx_rx_loop_on_reply}, {group, busy_medium}].
 
 groups() -> [{simple_tx_rx, [parallel], [sender, receiver]},
              {tx_rx_multiple_nodes, [parallel], [sender, receiver, outsider]},
              {tx_rx_ack, [parallel], [sender, receiver, outsider]},
              {tx_rx_no_ack, [parallel], [sender_no_ack, outsider]},
              {rx_loop_on, [parallel], [sender, receiver_callback]},
-             {tx_rx_loop_on_reply, [parallel], [sender_rx_loop_reply, receiver_rx_loop_reply]}
+             {tx_rx_loop_on_reply, [parallel], [sender_rx_loop_reply, receiver_rx_loop_reply]},
+             {busy_medium, [parallel], [sender_busy_medium, jammer]}
             ].
 
 init_per_suite(Config) ->
@@ -28,6 +31,10 @@ init_per_suite(Config) ->
 
 end_per_suite(_Config) ->
     ok.
+
+init_per_group(busy_medium, Config) ->
+    {NetPid, Network} = ieee802154_node:boot_network_node(),
+    [{net_pid, NetPid}, {network, Network} | Config];
 
 init_per_group(tx_rx_no_ack, Config) -> init_per_group(tx_rx_ack, Config); % Config is the same
 
@@ -90,6 +97,18 @@ init_per_testcase(receiver_rx_loop_reply, Config) ->
     init_ets_callback_table(Node),
     [{receiver_rx_loop_reply, NodeRef} | Config];
 
+init_per_testcase(sender_busy_medium, Config) ->
+    Network = ?config(network, Config),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(sender_busy_medium, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun(Frame) -> input_callback(Frame) end),
+    init_ets_callback_table(Node),
+    [{sender_busy_medium, NodeRef} | Config];
+
+init_per_testcase(jammer, Config) -> 
+    Network = ?config(network, Config),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(jammer, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun(Frame) -> input_callback(Frame) end),
+    init_ets_callback_table(Node),
+    [{jammer, NodeRef} | Config];
+
 init_per_testcase(_, Config) ->
     Config.
 
@@ -124,7 +143,7 @@ receiver_callback(Config) ->
 
 outsider(Config) ->
     {_, Node} = ?config(outsider, Config),
-    {error, rxfwto} = erpc:call(Node, ieee802154, reception, []).
+    {error, affrej} = erpc:call(Node, ieee802154, reception, []). % The outsider shall receive the ACK but not the dataframe
 
 % in this test case, the sender is expecting an ACK but never receives one
 sender_no_ack(Config) ->
@@ -157,6 +176,17 @@ receiver_rx_loop_reply(Config) ->
     ok = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]),
     ok = erpc:call(Node, ieee802154, rx_off, []).
 
+%--- unslotted CSMA-CA test case group
+sender_busy_medium(Config) -> 
+    {_, Node} = ?config(sender_busy_medium, Config),
+    %timer:sleep(100),
+    Frame = [#frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED}, #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, <<"Test - this frame shouldn't be transmitted">>],
+    {error, channel_access_failure} = erpc:call(Node, ieee802154, transmission, Frame).
+
+jammer(Config) -> 
+    {_, Node} = ?config(jammer, Config),
+    jammer_loop(Node, 20).
+
 %--- Internal -------------------------------------------------------------------------------
 
 get_expected_frame(Config) ->
@@ -171,3 +201,11 @@ input_callback(Frame) ->
 init_ets_callback_table(Node) ->
     erpc:call(Node, ets, insert, [callback_table, {nb_rx_frames, 0}]), % ets table is created by the mock phy
     erpc:call(Node, ets, insert, [callback_table, {rx_frames, []}]).
+
+jammer_loop(_, 0) -> 
+    ok;
+jammer_loop(Node, N) ->
+    ok = erpc:call(Node, mock_phy_network, transmit, [<<"Jamming frame">>, #tx_opts{}]),
+    timer:sleep(5),
+    jammer_loop(Node, N-1).
+    

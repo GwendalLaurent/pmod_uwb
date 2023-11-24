@@ -10,6 +10,12 @@
 -export([reception/1]).
 -export([disable_rx/0]).
 
+-export([set_preamble_timeout/1]).
+-export([disable_preamble_timeout/0]).
+
+-export([suspend_frame_filtering/0]).
+-export([resume_frame_filtering/0]).
+
 -export([read/1]).
 -export([write/2]).
 
@@ -39,6 +45,18 @@ reception() ->
 
 reception(_) ->
     gen_server:call(?NAME, {reception}).
+
+set_preamble_timeout(Timeout) ->
+    write(drx_conf, #{drx_pretoc => Timeout - 1}).
+
+disable_preamble_timeout() ->
+    write(drx_conf, #{drx_pretoc => 0}).
+
+suspend_frame_filtering() ->
+    write(sys_cfg, #{ffen => 0}).
+
+resume_frame_filtering() ->
+    write(sys_cfg, #{ffen => 1}).
 
 read(Reg) ->
     gen_server:call(?NAME, {read, Reg}).

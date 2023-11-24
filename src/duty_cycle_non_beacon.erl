@@ -61,9 +61,9 @@ rx(#state{phy_layer = PhyMod} = State) ->
    end.
 
 -spec terminate(State::term(), Reason::term()) -> ok.
-terminate(#state{loop_pid = undefined}, _) -> ok;
-terminate(#state{loop_pid = LoopPid, phy_layer = PhyMod}, Reason) ->
+terminate(#state{loop_pid = LoopPid, phy_layer = PhyMod, mac_tx_state = MacTXState}, Reason) ->
     turn_off_rx_loop(PhyMod, LoopPid, Reason),
+    gen_mac_tx:stop(MacTXState, Reason),
     ok.
 
 %--- internal --------------------------------------------------------------
@@ -90,6 +90,7 @@ turn_on_rx_loop(PhyMod, SNIFF_ONT, SNIFF_OFFT, Callback) ->
     PhyMod:write(rx_sniff, #{sniff_ont => SNIFF_ONT, sniff_offt => SNIFF_OFFT}),
     spawn_link(fun() -> rx_loop(PhyMod, Callback) end).
 
+turn_off_rx_loop(_, undefined, _) -> ok;
 turn_off_rx_loop(PhyMod, LoopPid, Reason) ->
     unlink(LoopPid), 
     exit(LoopPid, Reason),

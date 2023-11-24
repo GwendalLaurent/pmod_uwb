@@ -5,8 +5,10 @@
 -export([start_link/2]).
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, wait_for_transmission/0, reception/0, reception/1]).
 -export([set_frame_timeout/1]).
+-export([set_preamble_timeout/1, disable_preamble_timeout/0]).
 -export([softreset/0, clear_rx_flags/0]).
 -export([disable_rx/0]).
+-export([suspend_frame_filtering/0, resume_frame_filtering/0]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -286,11 +288,25 @@ wait_for_reception() ->
 
 %% @doc Set the frame wait timeout and enables it
 -spec set_frame_timeout(Timeout) -> Result when
-      Timeout :: miliseconds(),
+      Timeout :: microseconds(),
       Result  :: ok.
 set_frame_timeout(Timeout) -> 
     write(rx_fwto, #{rxfwto => Timeout}),
     write(sys_cfg, #{rxwtoe => 2#1}). % enable receive wait timeout
+
+%% @doc Sets the preamble timeout. (PRETOC register of the DW1000)
+%% The unit of `Timeout' is in units PAC size symbols
+%% Approx. 1 preamble symbol ~ 1µs
+%% Default PAC is 8 => 1 unit is ~8µs
+%% Source: https://forum.qorvo.com/t/carrier-sense-multiple-access-with-collision-avoidance-in-dw1000/3659/3
+-spec set_preamble_timeout(Timeout) -> ok when
+      Timeout :: non_neg_integer().
+set_preamble_timeout(Timeout) ->
+    % Remove 1 because DW1000 counter auto. adds 1 (cf. 7.2.40.9 user manual)
+    write(drx_conf, #{drx_pretoc => Timeout - 1}).
+
+disable_preamble_timeout() ->
+    write(drx_conf, #{drx_pretoc => 0}).
 
 %% @doc Performs a reset of the IC following the procedure (cf. sec. 7.2.50.1) 
 softreset() -> 
@@ -311,6 +327,12 @@ clear_rx_flags() ->
                         rxphd => 2#1,
                         rxdfr => 2#1,
                         rxfcg => 2#1}).
+
+suspend_frame_filtering() ->
+    write(sys_cfg, #{ffen => 2#0}).
+
+resume_frame_filtering() ->
+    write(sys_cfg, #{ffen => 2#1}).
 
 %--- gen_server Callbacks ------------------------------------------------------
 

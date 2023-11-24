@@ -6,10 +6,9 @@
 
 -spec default() -> map().
 default() ->
-    #{eui => #{eui => <<16#FFFFFFFFFFFFFFFF:64>>},
-      panadr => #{pan_id => <<16#FFFFFFFF:16>>, short_addr => <<16#FFFFFFFF:16>>},
-      rx_fwto => #{rxfwto => 0},
-      sys_cfg => #{aackpend => 0,
+    #{eui => #{eui => <<16#FFFFFFFFFFFFFFFF:64>>}, % 0x01
+      panadr => #{pan_id => <<16#FFFFFFFF:16>>, short_addr => <<16#FFFFFFFF:16>>}, % 0x03
+      sys_cfg => #{aackpend => 0, % 0x04
                    autoack => 0,
                    rxautr => 0,
                    rxwtoe => 0,
@@ -32,8 +31,12 @@ default() ->
                    ffab => 0,
                    ffbc => 0,
                    ffen => 0},
-      rx_sniff => #{sniff_offt => 0, sniff_ont => 0},
-      pmsc => #{pmsc_ctrl0 => #{}, % PMSC isn't complete yet
+      rx_fwto => #{rxfwto => 0}, % 0x0C
+      rx_sniff => #{sniff_offt => 0, sniff_ont => 0}, % 0x1D
+      % DRX_CONF isn't complete yet
+      drx_conf => #{drx_pretoc => 0}, % 0x27
+      % PMSC isn't complete yet
+      pmsc => #{pmsc_ctrl0 => #{},  % 0x36
                 pmsc_ctrl1 => #{arx2init => 0}}
      }.
 

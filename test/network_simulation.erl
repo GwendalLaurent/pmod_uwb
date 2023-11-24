@@ -27,10 +27,14 @@ loop(#{nodes := Nodes} = State) ->
         {ping, Pid, Node} -> {Pid, Node} ! pong, loop(State);
         {register, Name} -> loop(State#{nodes => [Name | Nodes]});
         {unreg, Name} -> loop(State#{nodes => lists:filter(fun(Elem) -> Elem =/= Name end, Nodes)});
-        {tx, Frame} -> broadcast(Nodes, Frame), loop(State);
+        {tx, From, Frame} -> broadcast(Nodes, From, Frame), loop(State);
         {stop} -> ok
     end.
 
-broadcast(Nodes, Frame) -> 
-    io:format("Broadcasting"),
-    [{mock_phy_network, Node} ! {frame, Frame} || Node <- Nodes].
+broadcast([], _, _) -> 
+    ok;
+broadcast([From | T], From, Frame) -> 
+    broadcast(T, From, Frame);
+broadcast([Node | T], From, Frame) -> 
+    {mock_phy_network, Node} ! {frame, Frame},
+    broadcast(T, From, Frame).

@@ -9,10 +9,14 @@
 -export([rx_on/0]).
 -export([rx_off/0]).
 -export([tx/1]).
+-export([jammer/0]).
 
 % Callbacks
 -export([start/2]).
 -export([stop/1]).
+
+-define(DATA, <<"JAMMING">>).
+-define(DATALENGTH, byte_size(?DATA)).
 
 % Sends/receive only 1 frame
 tx() ->
@@ -31,6 +35,18 @@ tx(0) -> ok;
 tx(N) ->
     ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>),
     tx(N-1).
+
+jammer() ->
+    ieee802154:rx_off(),
+    jammer(1000).
+
+jammer(0) -> ok;
+jammer(N) -> 
+    pmod_uwb:write_tx_data(?DATA),
+    pmod_uwb:write(tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => ?DATALENGTH}),
+    pmod_uwb:write(sys_ctrl, #{txstrt => 2#1, txdlys => 0}), % start transmission and some options
+    pmod_uwb:wait_for_transmission(),
+    jammer(N-1).
 
 start(_Type, _Args) -> 
     {ok, Supervisor} = robot_sup:start_link(),
