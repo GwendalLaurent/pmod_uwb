@@ -84,6 +84,7 @@
                                         SubRegister==evc_tpw).
 
 %--- Types ---------------------------------------------------------------------
+-export_type([tx_opts/0]).
 
 -type regFileID() :: atom().
 -opaque tx_opts() :: #tx_opts{}.
