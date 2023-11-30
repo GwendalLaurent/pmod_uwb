@@ -145,8 +145,12 @@ idle({call, From}, rx_on, #{mac_layer := MacState, input_callback := Callback} =
 idle({call, From}, rx_off, Data) ->
     {keep_state, Data, {reply, From, ok}};
 
-idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, Data) -> 
-    {next_state, tx, Data, [{next_event, internal, {tx, idle, FrameControl, FrameHeader, Payload, From}}]};
+idle({call, From}, {tx, FrameControl, FrameHeader, Payload}, #{mac_layer := MacLayerState} = Data) -> 
+    case gen_mac_layer:tx(MacLayerState, FrameControl, FrameHeader, Payload) of
+        {ok, NewMacState} -> {keep_state, Data#{mac_layer => NewMacState}, [{reply, From, ok}]};
+        {error, NewMacState, Err} -> {keep_state, Data#{mac_layer => NewMacState}, [{reply, From, {error, Err}}]} 
+    end;
+    % {next_state, tx, Data, [{next_event, internal, {tx, idle, FrameControl, FrameHeader, Payload, From}}]};
 
 idle({call, From}, rx, #{mac_layer := MacState} = Data) -> % simple RX doesn't goes in RX state
     case gen_mac_layer:rx(MacState) of

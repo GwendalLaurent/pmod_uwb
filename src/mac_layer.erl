@@ -29,7 +29,7 @@
 % @end
 init(#{phy_layer := PhyMod, duty_cycle := DutyCycleMod}) ->
     PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
-    PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1}),
+    PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1, rxwtoe => 1}),
     DutyCycleState = gen_duty_cycle:start(DutyCycleMod, PhyMod),
     #{phy_layer => PhyMod, duty_cycle => DutyCycleState, retries => 0, attributes => default_attribute_values()}. 
 

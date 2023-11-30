@@ -13,11 +13,11 @@
 
 %% CCA Mode 5 should last at least the maximum packet duration + the maximum period for ACK
 %% Maximum packet duration = 1207.79µs
-%% Maximum period for ACK = 1058.21µs
-%% Sum => 2260µs
+%% Maximum period for ACK = 1058.21µs + 12µs
+%% Sum => 2272µs
 %% Since PRETOC units are in PAC size, we know that the default PAC is 8 symbols and 1 symbol ~ 1µs
-%% We can conclude that CCA_DURATION = ceil(2260/8) = 283
--define(CCA_DURATION, 283).
+%% We can conclude that CCA_DURATION = ceil(2272/8) = 284
+-define(CCA_DURATION, 284).
 
 
 % This module has the responsability of managing the channel access (CSMA/CA algorithm)
@@ -34,7 +34,7 @@ init(PhyMod) -> #{phy_layer => PhyMod}.
       CW0                :: non_neg_integer(),
       TxOpts             :: #tx_opts{}.
 tx(#{phy_layer := PhyMod} = State, Frame, MacMinBE, MacMaxCSMABackoffs, _, TxOpts) ->
-    PhyMod:set_preamble_timeout(?CCA_DURATION),
+    % PhyMod:set_preamble_timeout(?CCA_DURATION),
     % PhyMod:suspend_frame_filtering(), % Frame filtering will trigger a flag if a frame is rejected (other than rxpto and rxsfdto)
     Ret = case unslotted_CSMA(PhyMod, Frame, 0, MacMinBE, MacMinBE, MacMaxCSMABackoffs) of 
               ok -> 
@@ -43,9 +43,18 @@ tx(#{phy_layer := PhyMod} = State, Frame, MacMinBE, MacMaxCSMABackoffs, _, TxOpt
               error -> 
                   {error, State, channel_access_failure}
           end,
-    PhyMod:disable_preamble_timeout(),
+    % Ret = case benchmark(fun() -> unslotted_CSMA() end) of 
+    %           ok -> 
+    %               PhyMod:transmit(Frame, TxOpts),
+    %               {ok, State};
+    %           error -> 
+    %               {error, State, channel_access_failure}
+    %       end,
+    % PhyMod:disable_preamble_timeout(),
     % PhyMod:resume_frame_filtering(),
     Ret.
+    % PhyMod:transmit(Frame, TxOpts),
+    % {ok, State}.
 
 terminate(_State, _Reason) -> ok.
 
@@ -63,8 +72,20 @@ unslotted_CSMA(_, _, NB, _, _, MacMaxCSMABackoffs) when NB > MacMaxCSMABackoffs 
 unslotted_CSMA(PhyMod, Frame, NB, BE, MacMinBE, MacMaxCSMABackoffs) ->
     % TODO: random backoff -> currently impossible ??
     % CCA
-    case PhyMod:reception() of
-        rxpto -> ok;
-        rxsfdto -> ok; % In some cases, DW1000 can detect a false peamble. In these cases, rxsfdto is triggered
-        _ -> unslotted_CSMA(PhyMod, Frame, NB+1, min(BE+1, MacMinBE), MacMinBE, MacMaxCSMABackoffs) % Still need to check if other rx error occured
+    case PhyMod:cca() of
+        error -> unslotted_CSMA(PhyMod, Frame, NB+1, min(BE+1, MacMinBE), MacMinBE, MacMaxCSMABackoffs); % Still need to check if other rx error occured
+        ok -> ok
     end. 
+
+unslotted_CSMA() ->
+    % TODO: random backoff -> currently impossible ??
+    % CCA
+    pmod_uwb:cca().
+
+benchmark(Function) ->
+    Start = os:timestamp(),
+    Ret = Function(),
+    End = os:timestamp(),
+    Time = timer:now_diff(End, Start)/1000000,
+    io:format("Execution: ~w~n", [Time]),
+    Ret.

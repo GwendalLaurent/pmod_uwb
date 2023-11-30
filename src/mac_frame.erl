@@ -45,15 +45,15 @@ encode_ack(FramePending, Seqnum) ->
 build_mac_header(FrameControl, MacHeader) ->
     FC = build_frame_control(FrameControl),
 
-    DestPan = reverse_byte_order(MacHeader#mac_header.dest_pan, <<>>),
-    DestAddr= reverse_byte_order(MacHeader#mac_header.dest_addr, <<>>),
+    DestPan = reverse_byte_order(MacHeader#mac_header.dest_pan),
+    DestAddr= reverse_byte_order(MacHeader#mac_header.dest_addr),
     DestAddrFields = case FrameControl#frame_control.dest_addr_mode of
                          ?NONE -> <<>>;
                          _ -> <<DestPan/bitstring, DestAddr/bitstring>> 
                     end,
 
-    SrcPan = reverse_byte_order(MacHeader#mac_header.src_pan, <<>>),
-    SrcAddr= reverse_byte_order(MacHeader#mac_header.src_addr, <<>>),
+    SrcPan = reverse_byte_order(MacHeader#mac_header.src_pan),
+    SrcAddr= reverse_byte_order(MacHeader#mac_header.src_addr),
     SrcAddrFields = case {FrameControl#frame_control.src_addr_mode, FrameControl#frame_control.pan_id_compr, FrameControl#frame_control.dest_addr_mode} of
                         {?NONE, _, _} -> <<>>;
                         {_, ?DISABLED, _} -> <<SrcPan/bitstring, SrcAddr/bitstring>>; % if no compression is applied on PANID and SRC addr is present
@@ -155,6 +155,10 @@ decode_frame_control(FC) ->
 
 %--- Tool functions ------------------------------------------------------------
 
+% reverse_byte_order(Bitstring) -> 
+%     Size = bit_size(Bitstring),
+%     <<X:Size/integer-little>> = Bitstring,
+%     <<X:Size/integer-big>>.
 reverse_byte_order(Bitstring) -> reverse_byte_order(Bitstring, <<>>).
 reverse_byte_order(<<>>, Acc) -> Acc;
 reverse_byte_order(<<Head:8>>, Acc) ->

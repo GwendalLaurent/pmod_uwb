@@ -9,6 +9,7 @@
 -export([softreset/0, clear_rx_flags/0]).
 -export([disable_rx/0]).
 -export([suspend_frame_filtering/0, resume_frame_filtering/0]).
+-export([cca/0]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -334,6 +335,25 @@ suspend_frame_filtering() ->
 resume_frame_filtering() ->
     write(sys_cfg, #{ffen => 2#1}).
 
+%% @doc Performs the CCA
+%% Returns ok if nothing is detected on the channel
+%% Returns error if the DW1000 detected that the channel is busy
+-spec cca() -> ok | error.
+cca() ->
+    enable_rx(),
+    timer:sleep(1),
+    wait_for_to().
+
+wait_for_to() ->
+    case read(sys_status) of
+        #{rxpto := 1} -> ok;
+        #{rxsfdto := 1} -> ok;
+        #{rxprd := 1} -> error;
+        #{rxsfdd := 1} -> error; % theoritically, this should cover any frame rx (i.e. channel is busy)
+        % #{rxfwto := 1} -> error;
+        _ -> wait_for_to()
+    end.
+
 %--- gen_server Callbacks ------------------------------------------------------
 
 %% @private
@@ -486,6 +506,12 @@ reverse(<<Bin:8>>, Acc) ->
     <<Bin, Acc/binary>>;
 reverse(<<Bin:8, Rest/bitstring>>, Acc) -> 
     reverse(Rest, <<Bin, Acc/binary>>).
+
+% Source: https://stackoverflow.com/a/43310493
+% reverse(Binary) ->
+%     Size = bit_size(Binary),
+%     <<X:Size/integer-little>> = Binary,
+%     <<X:Size/integer-big>>.
 
 %% @private
 %% @doc Creates the header of the SPI transaction between the GRiSP and the pmod

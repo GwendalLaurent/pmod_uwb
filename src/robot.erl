@@ -8,15 +8,25 @@
 -export([tx/0]).
 -export([rx_on/0]).
 -export([rx_off/0]).
--export([tx/1]).
+-export([tx_benchmark/0]).
+-export([rx_benchmark/0]).
 -export([jammer/0]).
 
 % Callbacks
 -export([start/2]).
 -export([stop/1]).
 
--define(DATA, <<"JAMMING">>).
--define(DATALENGTH, byte_size(?DATA)).
+-define(JAMMING_DATA, <<"JAMMING">>).
+-define(DATALENGTH, byte_size(?JAMMING_DATA)).
+
+-define(BENCHMARK_DATA, <<16#F:(111*8)>>).
+-define(BENCHMARK_DATA_LENGTH, bit_size(?BENCHMARK_DATA)).
+
+-define(PANID, <<16#CAFE:16>>).
+-define(SENDER_ADDR, <<16#0001:16>>).
+-define(RECEIVER_ADDR, <<16#0002:16>>).
+
+-define(CCA_DURATION, 283).
 
 % Sends/receive only 1 frame
 tx() ->
@@ -25,16 +35,21 @@ tx() ->
     MacHeader = #mac_header{},
     ieee802154:transmission(FrameControl, MacHeader, <<"Test">>).
 
-rx_callback({_FrameControl, MacHeader, Payload}) ->
-    io:format("Received frame with seqnum: ~w - Payload: ~w ~n", [MacHeader#mac_header.seqnum, Payload]).
+rx_callback({_FrameControl, _MacHeader, _Payload}) ->
+    ok.
+    % io:format("Received frame with seqnum: ~w - Payload: ~w ~n", [_MacHeader#mac_header.seqnum, _Payload]).
 
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().
 
-tx(0) -> ok;
-tx(N) ->
-    ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{seqnum = N}, <<16#F:(111*8)>>),
-    tx(N-1).
+tx(0, Total, Success, Error) -> {Success, Error, Total};
+tx(N, Total, Success, Error) ->
+    % io:format("~w~n", [N]),
+    Seqnum = Total rem 512,
+    case ieee802154:transmission(#frame_control{pan_id_compr = ?ENABLED, ack_req = ?ENABLED}, #mac_header{seqnum = Seqnum, dest_pan = ?PANID, dest_addr = ?RECEIVER_ADDR, src_addr = ?SENDER_ADDR}, ?BENCHMARK_DATA) of
+        ok -> tx(N-1, Total+1, Success+1, Error);
+        _ -> tx(N-1, Total+1, Success, Error+1)
+    end.
 
 jammer() ->
     ieee802154:rx_off(),
@@ -42,11 +57,36 @@ jammer() ->
 
 jammer(0) -> ok;
 jammer(N) -> 
-    pmod_uwb:write_tx_data(?DATA),
+    pmod_uwb:write_tx_data(?JAMMING_DATA),
     pmod_uwb:write(tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => ?DATALENGTH}),
     pmod_uwb:write(sys_ctrl, #{txstrt => 2#1, txdlys => 0}), % start transmission and some options
     pmod_uwb:wait_for_transmission(),
     jammer(N-1).
+
+tx_benchmark() ->
+    ieee802154:set_pan_id(?PANID),
+    ieee802154:set_mac_short_address(?SENDER_ADDR),
+    pmod_uwb:set_preamble_timeout(?CCA_DURATION),
+    NbrFrames = 10000,
+    % NbrFrames = 1000,
+    Start = os:timestamp(),
+    {Success, Error, Total} = tx(NbrFrames, 0, 0, 0), 
+    End = os:timestamp(),
+    Time = timer:now_diff(End, Start)/1000000,
+    io:format("------------------- Report -------------------~n"),
+    io:format("Sent ~w frames - Success rate ~.3f (~w/~w) - Error rate ~.3f (~w/~w)~n", [Total, Success/Total, Success, Total, Error/Total, Error, Total]),
+    io:format("Data rate ~.1f b/s - ~w b in ~w s ~n", [(?BENCHMARK_DATA_LENGTH*NbrFrames)/Time, ?BENCHMARK_DATA_LENGTH*NbrFrames, Time]),
+    io:format("----------------------------------------------~n").
+
+rx_benchmark() ->
+    ieee802154:set_pan_id(?PANID),
+    ieee802154:set_mac_short_address(?RECEIVER_ADDR),
+    % rx().
+    ieee802154:rx_on().
+
+rx() ->
+    ieee802154:reception(),
+    rx().
 
 start(_Type, _Args) -> 
     {ok, Supervisor} = robot_sup:start_link(),
@@ -54,7 +94,7 @@ start(_Type, _Args) ->
     ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer, input_callback = fun rx_callback/1}),
     % pmod_uwb:write(rx_fwto, #{rxfwto => 16#FFFF}),
     % pmod_uwb:write(sys_cfg, #{rxwtoe => 2#1}), 
-    ieee802154:rx_on(),
+    % ieee802154:rx_on(),
     {ok, Supervisor}.
 
 % @private
