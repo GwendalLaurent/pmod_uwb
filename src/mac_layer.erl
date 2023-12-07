@@ -29,15 +29,15 @@
 % @end
 init(#{phy_layer := PhyMod, duty_cycle := DutyCycleMod}) ->
     PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
-    PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1}),
+    PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1, rxwtoe => 1}),
     DutyCycleState = gen_duty_cycle:start(DutyCycleMod, PhyMod),
     #{phy_layer => PhyMod, duty_cycle => DutyCycleState, retries => 0, attributes => default_attribute_values()}. 
 
 % @doc transmits a frame using the physical layer
 % @end
 tx(#{duty_cycle := DutyCycleState, attributes := Attributes} = State, FrameControl, MacHeader, Payload) ->
-    #{mac_min_BE := MacMinBE, mac_max_csma_backoffs := MacMaxCSMABackoffs, cw0 := CW0} = Attributes,
-    case gen_duty_cycle:tx_request(DutyCycleState, mac_frame:encode(FrameControl, MacHeader, Payload), MacMinBE, MacMaxCSMABackoffs, CW0) of
+    #{mac_min_BE := MacMinBE, mac_max_BE := MacMaxBE, mac_max_csma_backoffs := MacMaxCSMABackoffs, cw0 := CW0} = Attributes,
+    case gen_duty_cycle:tx_request(DutyCycleState, mac_frame:encode(FrameControl, MacHeader, Payload), MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) of
         {ok, NewDutyCycleState} -> {ok, State#{duty_cycle => NewDutyCycleState}};
         {error, NewDutyCycleState, Error} -> {error, State#{duty_cycle => NewDutyCycleState}, Error}
     end.

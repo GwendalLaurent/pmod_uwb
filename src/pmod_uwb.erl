@@ -83,7 +83,10 @@
                                         SubRegister==evc_hpw;
                                         SubRegister==evc_tpw).
 
+
 %--- Types ---------------------------------------------------------------------
+-export_type([tx_opts/0]).
+
 -export_type([tx_opts/0]).
 
 -type regFileID() :: atom().
@@ -300,8 +303,10 @@ set_frame_timeout(Timeout) ->
 %% Approx. 1 preamble symbol ~ 1µs
 %% Default PAC is 8 => 1 unit is ~8µs
 %% Source: https://forum.qorvo.com/t/carrier-sense-multiple-access-with-collision-avoidance-in-dw1000/3659/3
+%% <b> Don't use this function Timeout = 0</b>
+%% To disable the preamble timeout, use the function disable_preamble_timeout/0
 -spec set_preamble_timeout(Timeout) -> ok when
-      Timeout :: non_neg_integer().
+      Timeout :: pos_integer().
 set_preamble_timeout(Timeout) ->
     % Remove 1 because DW1000 counter auto. adds 1 (cf. 7.2.40.9 user manual)
     write(drx_conf, #{drx_pretoc => Timeout - 1}).
@@ -487,6 +492,12 @@ reverse(<<Bin:8>>, Acc) ->
     <<Bin, Acc/binary>>;
 reverse(<<Bin:8, Rest/bitstring>>, Acc) -> 
     reverse(Rest, <<Bin, Acc/binary>>).
+
+% Source: https://stackoverflow.com/a/43310493
+% reverse(Binary) ->
+%     Size = bit_size(Binary),
+%     <<X:Size/integer-little>> = Binary,
+%     <<X:Size/integer-big>>.
 
 %% @private
 %% @doc Creates the header of the SPI transaction between the GRiSP and the pmod

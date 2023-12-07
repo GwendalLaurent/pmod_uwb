@@ -1,70 +1,92 @@
+% This module has the responsability of managing the channel access (CSMA/CA algorithm)
 -module(unslotted_CSMA).
 
+-include("ieee802154.hrl").
 -include("pmod_uwb.hrl").
 
 -behaviour(gen_mac_tx).
 
 -export([init/1]).
--export([tx/6]).
+-export([tx/7]).
 -export([terminate/2]).
 
+%--- Macros --------------------------------------------------------------------
 
+% According to Qorov forums, 1 symbol ~ 1 µs => The unit of AUNITBACKOFFPERIOD are in µs
 -define(AUNITBACKOFFPERIOD, 20). % The number of symbols forming the basic time period used in CSMA-CA (src. IEEE 802.15.4 stdMA-CA (src. IEEE 802.15.4 std.)
+
 
 %% CCA Mode 5 should last at least the maximum packet duration + the maximum period for ACK
 %% Maximum packet duration = 1207.79µs
-%% Maximum period for ACK = 1058.21µs
-%% Sum => 2260µs
+%% Maximum period for ACK = 1058.21µs + 12µs
+%% Sum => 2272µs
 %% Since PRETOC units are in PAC size, we know that the default PAC is 8 symbols and 1 symbol ~ 1µs
-%% We can conclude that CCA_DURATION = ceil(2260/8) = 283
--define(CCA_DURATION, 283).
+%% We can conclude that CCA_DURATION = ceil(2272/8) = 284
+-define(CCA_DURATION, 284).
 
-
-% This module has the responsability of managing the channel access (CSMA/CA algorithm)
+%--- Records -------------------------------------------------------------------
 
 %--- gen_mac_tx Callbacks ------------------------------------------------------
 
+-spec init(PhyMod) -> State when
+      PhyMod :: module(),
+      State  :: map().
 init(PhyMod) -> #{phy_layer => PhyMod}.
 
--spec tx(State, Frame, MacMinBE, MacMaxCSMABackoffs, CW0, TxOpts) -> {ok, State} | {error, State, channel_access_failure} when
+%% @doc Tries to transmit a frame using unslotted CSMA-CA
+%% @param MacMinBE: The minimum value of the backoff exponent as described in the standard
+%% @param MacMaxCSMABackoffs: The maximum amount of time the CSMA algorithm will backoff if the channel is busy
+%% @param CW0: Not needed in this version of the algorithm. Ignored by this function
+-spec tx(State, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0, TxOpts) -> {ok, State} | {error, State, channel_access_failure} when
       State              :: map(),
       Frame              :: bitstring(),
-      MacMinBE           :: non_neg_integer(),
-      MacMaxCSMABackoffs :: non_neg_integer(),
-      CW0                :: non_neg_integer(),
+      MacMinBE           :: mac_min_BE(),
+      MacMaxBE           :: mac_max_BE(),
+      MacMaxCSMABackoffs :: max_max_csma_backoff(),
+      CW0                :: cw0(),
       TxOpts             :: #tx_opts{}.
-tx(#{phy_layer := PhyMod} = State, Frame, MacMinBE, MacMaxCSMABackoffs, _, TxOpts) ->
+tx(#{phy_layer := PhyMod} = State, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, _, TxOpts) ->
     PhyMod:set_preamble_timeout(?CCA_DURATION),
-    % PhyMod:suspend_frame_filtering(), % Frame filtering will trigger a flag if a frame is rejected (other than rxpto and rxsfdto)
-    Ret = case unslotted_CSMA(PhyMod, Frame, 0, MacMinBE, MacMinBE, MacMaxCSMABackoffs) of 
+    Ret = case try_cca(PhyMod, 0, MacMinBE, MacMaxBE, MacMaxCSMABackoffs) of 
               ok -> 
                   PhyMod:transmit(Frame, TxOpts),
                   {ok, State};
-              error -> 
+              error ->
                   {error, State, channel_access_failure}
           end,
     PhyMod:disable_preamble_timeout(),
-    % PhyMod:resume_frame_filtering(),
     Ret.
 
 terminate(_State, _Reason) -> ok.
 
-%--- Internal ------------------------------------------------------------------
+%--- Internal -----------------------------------------------------------------
 
--spec unslotted_CSMA(PhyMod, Frame, NB, BE, MacMinBE, MacMaxCSMABackoffs) -> ok | error when
+-spec try_cca(PhyMod, NB, BE, MacMaxBE, MacMaxCSMABackoffs) -> Result when
       PhyMod             :: module(),
-      Frame              :: bitstring(),
       NB                 :: non_neg_integer(),
       BE                 :: non_neg_integer(),
-      MacMinBE           :: non_neg_integer(),
-      MacMaxCSMABackoffs :: non_neg_integer().
-unslotted_CSMA(_, _, NB, _, _, MacMaxCSMABackoffs) when NB > MacMaxCSMABackoffs ->
+      MacMaxBE           :: mac_max_BE(),
+      MacMaxCSMABackoffs :: max_max_csma_backoff(),
+      Result             :: ok | error.
+try_cca(_, NB, _, _, MacMaxCSMABackoffs) when NB > MacMaxCSMABackoffs ->
     error;
-unslotted_CSMA(PhyMod, Frame, NB, BE, MacMinBE, MacMaxCSMABackoffs) ->
-    % TODO: random backoff -> currently impossible ??
-    % CCA
+try_cca(PhyMod, NB, BE, MacMaxBE, MacMaxCSMABackoffs) ->
+    RandBackOff = rand:uniform(trunc(math:pow(2,BE)-1)) * ?AUNITBACKOFFPERIOD,
+    SleepTime = trunc(math:ceil(RandBackOff/1000)),
+    timer:sleep(SleepTime),
+    case cca(PhyMod) of
+        ok -> ok;
+        error -> try_cca(PhyMod, NB+1, min(BE+1,MacMaxBE), MacMaxBE, MacMaxCSMABackoffs)
+    end.
+
+-spec cca(PhyMod) -> Result when
+      PhyMod :: module(),
+      Result :: ok | error.
+cca(PhyMod) ->
     case PhyMod:reception() of
         rxpto -> ok;
-        rxsfdto -> ok; % In some cases, DW1000 can detect a false peamble. In these cases, rxsfdto is triggered
-        _ -> unslotted_CSMA(PhyMod, Frame, NB+1, min(BE+1, MacMinBE), MacMinBE, MacMaxCSMABackoffs) % Still need to check if other rx error occured
-    end. 
+        rxsfdto -> ok;
+        rxprd -> error;
+        rxsfdd -> error; % theoritically, this should cover any frame rx (i.e. channel is busy)
+        _ -> error % In case you receive a frame -> ? Could this happen ?
+    end.
