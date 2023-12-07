@@ -65,7 +65,7 @@ stop_link() ->
 
 stop() -> gen_statem:stop(?MODULE).
 
--spec transmission(FrameControl :: #frame_control{}, FrameHeader :: #mac_header{}, Payload :: bitstring()) -> ok.
+-spec transmission(FrameControl :: #frame_control{}, FrameHeader :: #mac_header{}, Payload :: bitstring()) -> ok | {error, Error :: any()}.
 transmission(FrameControl, FrameHeader, Payload) -> gen_statem:call(?MODULE, {tx, FrameControl, FrameHeader, Payload}, infinity).
 
 %% @doc Wait for the reception of a frame and returns its content

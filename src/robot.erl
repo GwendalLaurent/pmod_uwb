@@ -6,6 +6,7 @@
 -include("ieee802154.hrl").
 
 -export([tx/0]).
+-export([rx/0]).
 -export([rx_on/0]).
 -export([rx_off/0]).
 -export([tx_benchmark/0]).
@@ -31,6 +32,7 @@
 % Sends/receive only 1 frame
 tx() ->
     % FrameControl = #frame_control{ack_req = ?ENABLED},
+    pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     FrameControl = #frame_control{},
     MacHeader = #mac_header{},
     ieee802154:transmission(FrameControl, MacHeader, <<"Test">>).
@@ -67,7 +69,7 @@ tx_benchmark() ->
     ieee802154:set_pan_id(?PANID),
     ieee802154:set_mac_short_address(?SENDER_ADDR),
     pmod_uwb:set_preamble_timeout(?CCA_DURATION),
-    NbrFrames = 10000,
+    NbrFrames = 100,
     % NbrFrames = 1000,
     Start = os:timestamp(),
     {Success, Error, Total} = tx(NbrFrames, 0, 0, 0), 

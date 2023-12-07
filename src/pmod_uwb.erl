@@ -9,7 +9,6 @@
 -export([softreset/0, clear_rx_flags/0]).
 -export([disable_rx/0]).
 -export([suspend_frame_filtering/0, resume_frame_filtering/0]).
--export([cca/0]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -84,7 +83,10 @@
                                         SubRegister==evc_hpw;
                                         SubRegister==evc_tpw).
 
+
 %--- Types ---------------------------------------------------------------------
+
+-export_type([tx_opts/0]).
 
 -type regFileID() :: atom().
 -opaque tx_opts() :: #tx_opts{}.
@@ -300,8 +302,10 @@ set_frame_timeout(Timeout) ->
 %% Approx. 1 preamble symbol ~ 1µs
 %% Default PAC is 8 => 1 unit is ~8µs
 %% Source: https://forum.qorvo.com/t/carrier-sense-multiple-access-with-collision-avoidance-in-dw1000/3659/3
+%% <b> Don't use this function Timeout = 0</b>
+%% To disable the preamble timeout, use the function disable_preamble_timeout/0
 -spec set_preamble_timeout(Timeout) -> ok when
-      Timeout :: non_neg_integer().
+      Timeout :: pos_integer().
 set_preamble_timeout(Timeout) ->
     % Remove 1 because DW1000 counter auto. adds 1 (cf. 7.2.40.9 user manual)
     write(drx_conf, #{drx_pretoc => Timeout - 1}).
@@ -334,25 +338,6 @@ suspend_frame_filtering() ->
 
 resume_frame_filtering() ->
     write(sys_cfg, #{ffen => 2#1}).
-
-%% @doc Performs the CCA
-%% Returns ok if nothing is detected on the channel
-%% Returns error if the DW1000 detected that the channel is busy
--spec cca() -> ok | error.
-cca() ->
-    enable_rx(),
-    timer:sleep(1),
-    wait_for_to().
-
-wait_for_to() ->
-    case read(sys_status) of
-        #{rxpto := 1} -> ok;
-        #{rxsfdto := 1} -> ok;
-        #{rxprd := 1} -> error;
-        #{rxsfdd := 1} -> error; % theoritically, this should cover any frame rx (i.e. channel is busy)
-        % #{rxfwto := 1} -> error;
-        _ -> wait_for_to()
-    end.
 
 %--- gen_server Callbacks ------------------------------------------------------
 

@@ -17,37 +17,53 @@
 % @end
 -module(gen_duty_cycle).
 
+-include("ieee802154.hrl").
+
 -callback init(PhyModule::module()) -> State::term().
 -callback on(State::term(), Callback::function()) -> {ok, State::term()}.
 -callback off(State::term()) -> {ok, State::term()}.
 % Add suspend and resume later
--callback tx(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
+-callback tx(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxBE :: non_neg_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
 -callback rx(State::term()) -> {ok, State::term(), Frame::bitstring()} | {error, State::term(), Error::atom()}.
 -callback terminate(State::term(), Reason::term()) -> ok.
 
 -export([start/2]).
 -export([turn_on/2]).
 -export([turn_off/1]).
--export([tx_request/5]).
+-export([tx_request/6]).
 -export([rx_request/1]).
 -export([stop/2]).
 
+%--- Types ---------------------------------------------------------------------
+
+-export_type([state/0]).
+
+-opaque state() :: {Module::module(), Sub::term()}.
+
+%--- API -----------------------------------------------------------------------
 
 % @doc initialize the duty cycle module
 % @end
--spec start(Module::module(), PhyModule::module()) -> State::term().
+-spec start(Module, PhyModule) -> State when
+      Module :: module(),
+      PhyModule :: module(),
+      State :: state().
 start(Module, PhyModule) ->
     {Module, Module:init(PhyModule)}.
 
 % @doc turns on the continuous reception 
 % @TODO specify which RX module has to be used
--spec turn_on(State::term(), Callback::function()) -> State::term().
+-spec turn_on(State, Callback) -> State when
+      State    :: state(),
+      Callback :: function(),
+      State    :: state().
 turn_on({Mod, Sub}, Callback) ->
     {ok, Sub2} = Mod:on(Sub, Callback),
     {Mod, Sub2}.
 
 % @doc turns off the continuous reception
--spec turn_off(State::term()) -> State::term().
+-spec turn_off(State) -> State when
+      State :: state().
 turn_off({Mod, Sub}) ->
     {ok, Sub2} = Mod:off(Sub),
     {Mod, Sub2}.
@@ -61,14 +77,25 @@ turn_off({Mod, Sub}) ->
 % <li> `frame_too_long': The frame was too long for the CAP or GTS</li>
 % <li> `channel_access_failure': the CSMA-CA algorithm failed</li>
 % @end
--spec tx_request(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
-tx_request({Mod, Sub}, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) ->
-    case Mod:tx(Sub, Frame, MacMinBE, MacMaxCSMABackoffs, CW0) of
+-spec tx_request(State, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) -> {ok, State} | {error, State, Error} when
+      State              :: state(),
+      Frame              :: bitstring(),
+      MacMinBE           :: mac_min_BE(),
+      MacMaxBE           :: mac_max_BE(),
+      MacMaxCSMABackoffs :: max_max_csma_backoff(),
+      CW0                :: cw0(),
+      State              :: state(),
+      Error              :: atom().
+tx_request({Mod, Sub}, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) ->
+    case Mod:tx(Sub, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) of
         {ok, Sub2} -> {ok, {Mod, Sub2}};
         {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
     end.
 
--spec rx_request(State::term()) -> {ok, State::term(), Frame::bitstring()} | {error, State::term(), Error::atom()}.
+-spec rx_request(State) -> {ok, State, Frame} | {error, State, Error} when
+      State :: state(),
+      Frame :: bitstring(),
+      Error :: atom().
 rx_request({Mod, Sub}) ->
     case Mod:rx(Sub) of
         {ok, Sub2, Frame} -> {ok, {Mod, Sub2}, Frame};
@@ -76,6 +103,8 @@ rx_request({Mod, Sub}) ->
     end.
 
 % @doc stop the duty cycle module
--spec stop(State::term(), Reason::atom()) -> ok.
+-spec stop(State, Reason) -> ok when
+      State  :: state(),
+      Reason :: atom().
 stop({Mod, Sub}, Reason) ->
     Mod:terminate(Sub, Reason).
