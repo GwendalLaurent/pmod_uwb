@@ -139,7 +139,7 @@ set(State, _Attribute, _) ->
 
 % @doc clean up function to stop the mac layer
 % @end
-terminate(#{duty_cycle := DutyCycleState}, Reason) -> 
+terminate(#{duty_cycle := DutyCycleState}, Reason) ->
     gen_duty_cycle:stop(DutyCycleState, Reason).
 
 %--- Internal ------------------------------------------------------------------

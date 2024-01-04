@@ -1,8 +1,12 @@
 -module(ieee802154_mac_layer_SUITE).
 
+%--- Includes ------------------------------------------------------------------
 -include_lib("common_test/include/ct.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -include("../src/mac_frame.hrl").
+
+%--- Export --------------------------------------------------------------------
 
 -export([init_per_group/2, end_per_group/2]).
 -export([all/0, groups/0]).
@@ -38,11 +42,18 @@
 
 -export([mac_tx_invalid_address/1]).
 
+-export([mac_get_set_max_be/1]).
+-export([mac_get_set_max_csma_backoffs/1]).
+-export([mac_get_set_min_BE/1]).
+-export([mac_get_set_unsupported_attribute/1]).
+
 -compile({nowarn_unused_function, [debug_bitstring_hex/1]}).
 
+%--- Callbacks -----------------------------------------------------------------
 all() -> [{group, encode_decode},
           {group, mac_get_set},
-          {group, tx}].
+          {group, tx},
+          {group, get_set_pib}].
 
 groups() -> [{encode_decode, [parallel], [mac_message_from_api,
                                           mac_message_pan_id_not_compressed,
@@ -70,9 +81,14 @@ groups() -> [{encode_decode, [parallel], [mac_message_from_api,
                                         mac_get_set_short_mac_addr,
                                         mac_get_set_pan_id,
                                         mac_get_set_unknown_value]},
-             {tx, [parallel], [mac_tx_invalid_address]}].
+             {tx, [parallel], [mac_tx_invalid_address]},
+             {get_set_pib, [parallel], [mac_get_set_max_be,
+                                        mac_get_set_max_csma_backoffs,
+                                        mac_get_set_min_BE,
+                                        mac_get_set_unsupported_attribute]}].
 
 init_per_group(tx, Config) -> init_per_group(mac_get_set, Config);
+init_per_group(get_set_pib, Config) -> init_per_group(mac_get_set, Config);
 init_per_group(mac_get_set, Config) ->
     mock_phy:start(spi2, #{}),
     MacState = gen_mac_layer:start(mac_layer, #{phy_layer => mock_phy, duty_cycle => duty_cycle_non_beacon}),
@@ -274,11 +290,43 @@ mac_get_set_unknown_value(Config) ->
     {error, State, unsupported_attribute} = gen_mac_layer:get(MacState, fake_attribute),
     {error, _, unsupported_attribute} = gen_mac_layer:set(State, fake_attribute, fake_value).
 
-%--- Test cases: tx ----------------------------------------------------------
+%--- Test cases: tx
 mac_tx_invalid_address(Config) ->
     MacState = ?config(mac_state, Config),
     {error, _State, invalid_address} = gen_mac_layer:tx(MacState, #frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE}, #mac_header{}, <<"Invalid address">>, ?DISABLED).
 
+%--- Test cases: Pib setters/getters
+%%  cw0 => 2, % cf. p.22 standard
+%%  mac_max_BE => 5,
+%%  mac_max_csma_backoffs => 4,
+%%  mac_min_BE => 3
+mac_get_set_max_be(Config) ->
+    MacState = ?config(mac_state, Config),
+    get_set_attribute(MacState, mac_max_BE, 5, 6).
+
+mac_get_set_max_csma_backoffs(Config) ->
+    MacState = ?config(mac_state, Config),
+    get_set_attribute(MacState, mac_max_csma_backoffs, 4, 2).
+
+mac_get_set_min_BE(Config) ->
+    MacState = ?config(mac_state, Config),
+    get_set_attribute(MacState, mac_min_BE, 3, 1).
+
+
+mac_get_set_unsupported_attribute(Config) ->
+    MacState = ?config(mac_state, Config),
+    {error, NewMacState, unsupported_attribute} = gen_mac_layer:get(MacState, random_attribute),
+    {error, _, unsupported_attribute} = gen_mac_layer:set(NewMacState, random_attribute, random_value).
+
 %--- Utils --------------------------------------------------------------------
+
+get_set_attribute(MacState, Attribute, DefaultValue, NewValue) ->
+    {ok, NewState, DefaultGetValue} = gen_mac_layer:get(MacState, Attribute),
+    ?assertEqual(DefaultValue, DefaultGetValue),
+    {ok, NewState2} = gen_mac_layer:set(NewState, Attribute, NewValue),
+    {ok, _, NewGetValue} = gen_mac_layer:get(NewState2, Attribute),
+    ?assertNotEqual(DefaultValue, NewValue),
+    ?assertEqual(NewValue, NewGetValue).
+
 debug_bitstring_hex(Bitstring) ->
     lists:flatten([io_lib:format("16#~2.16.0B ", [X]) || <<X>> <= Bitstring]).

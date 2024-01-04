@@ -23,7 +23,7 @@ end_per_testcase(_, _Config) ->
     mock_phy:stop_link().
 
 %--- Test cases -------------------------------------------------
-%
+
 stack_test(_Config) -> 
     ieee802154:rx_on(),
     ieee802154:transmission(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
@@ -45,5 +45,3 @@ double_on_off(_Config) ->
     {error, rx_already_on} = ieee802154:rx_on(),
     ieee802154:rx_off(),
     ieee802154:rx_off().
-
-% TODO: add get set test cases for Pib attributes
