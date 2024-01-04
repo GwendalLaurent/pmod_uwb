@@ -71,9 +71,46 @@ IEEE 802.15.4 stack structure
 The diagram displays the structure of the IEEE 802.15.4 stack.
 The blue blocks are modules that can be changed to create a new behaviour.
 
-Here's a list of the modules with a small description and their responsabilities:
-* `ieee802154`: This module is the interface with the upper layer. It dispatches the different function calls to the correct module.
-* `mac_layer`: This module implements the behaviour defined in `gen_mac_layer`. It manages the encoding/decoding of the frames. It encapsulate the MLME and the MPDU. For testing, this module can be replaced by a mock-up by implementing a new version of the the behaviour.
-* `duty_cycle`: This module implements the behaviour defined in `gen_duty_cycle`. It is responsible of the duty cycle of the IEEE 802.15.4 network (beacon enabled network/non beacon enabled) and also of the internal duty cycle of the pmod (low power listening/sniff mode). For now, the two duty cycles are encapsulated in the same module because we are working only with non-beacon enabled networks where the sniff mode is the only relevant internal duty cycle. (Note: in a beacon enabled network, coordinator should use the sniff mode but the normal nodes should use the low power listening)
-* `mac_tx`: This module is responsible of the transmission of MAC frames using CSMA/CA when it's needed
-* `PHY`: This layer is the driver of the pmod 
+The following subsections gives an indication of the roles and responsabilities of the different modules of the stack
+
+### ieee802154.erl
+
+* <u>Role</u>: Entry point for the API of the IEEE 802.15.4 stack
+* <u>Responsabilities</u>: Keep the state of all the child modules in memory
+
+Interaction with the IEEE 802.15.4 stack has to be done through this module.
+
+### gen_mac_layer.erl
+
+This is a custom behaviour module.
+
+* <u>Role</u>: 
+    * Encoding and decoding of the MAC frames (using the module `mac_frames.erl`)
+    * Managing the *PIB* of the mac sublayer
+    * Implementing the *MLME* and *MPDU* primitives
+
+Modules implementing the behaviour:
+* `mac_layer.erl`: The module that has to be used in normal working conditions
+* `mock_mac.erl`: Mock module used to test the API of the IEEE 802.15.4 stack
+
+### gen_duty_cycle
+
+This is a custom behaviour module.
+
+* <u>Role</u>: Manage one the duty cycling configuration defined by the mac sublayer for a PAN (i.e. non-beacon enabled PAN or beacon-enabled PAN)
+
+Since the module has to manage the duty cycling, it has to verify if a frame can be transmitted in time (in the current superframe in the case of a beacon enabled PAN).
+
+Additionally, It has to manage the ACK reception and the potential retransmission of frames using the process defined
+
+Modules implementing the behaviour:
+* `duty_cycle_non_beacon.erl`: This module implements the duty cycle when a non-beacon configuration is used.
+
+### gen_mac_tx
+
+This is a custom behaviour module.
+
+* <u>Role</u>: Manage the transmission of a frame using one of the medium access algorithm defined by the IEEE 802.15.4 standard
+
+Modules implementing the behaviour:
+* `unslotted_csma.erl`: This module implements the unslotted CSMA algorithm used in a non-beacon enabled PAN

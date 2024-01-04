@@ -277,7 +277,7 @@ mac_get_set_unknown_value(Config) ->
 %--- Test cases: tx ----------------------------------------------------------
 mac_tx_invalid_address(Config) ->
     MacState = ?config(mac_state, Config),
-    {error, _State, invalid_address} = gen_mac_layer:tx(MacState, #frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE}, #mac_header{}, <<"Invalid address">>).
+    {error, _State, invalid_address} = gen_mac_layer:tx(MacState, #frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE}, #mac_header{}, <<"Invalid address">>, ?DISABLED).
 
 %--- Utils --------------------------------------------------------------------
 debug_bitstring_hex(Bitstring) ->

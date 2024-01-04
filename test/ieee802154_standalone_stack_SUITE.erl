@@ -42,6 +42,8 @@ stack_read_write_test(_Config) ->
 
 double_on_off(_Config) ->
     ieee802154:rx_on(),
-    ieee802154:rx_on(),
+    {error, rx_already_on} = ieee802154:rx_on(),
     ieee802154:rx_off(),
     ieee802154:rx_off().
+
+% TODO: add get set test cases for Pib attributes

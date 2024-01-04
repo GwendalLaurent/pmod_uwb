@@ -11,7 +11,7 @@
 % No transmission during beacon
 % TX during CAP
 % No TX during CFP unless a slot is attributed to the node
-% 
+%
 % Manage the RX loop (suspend/resume)
 %
 % @end
@@ -20,25 +20,34 @@
 -include("ieee802154.hrl").
 
 -callback init(PhyModule::module()) -> State::term().
--callback on(State::term(), Callback::function()) -> {ok, State::term()}.
+-callback on(State::term(), Callback::gen_mac_rx:input_callback_raw_frame(), Ranging::boolean()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
 -callback off(State::term()) -> {ok, State::term()}.
 % Add suspend and resume later
--callback tx(State::term(), Frame::bitstring(), MacMinBE::pos_integer(), MacMaxBE :: non_neg_integer(), MacMaxCSMABackoffs::pos_integer(), CW0::pos_integer()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
+-callback tx(State::term(), Frame::bitstring(), CsmaParams::csma_params(), Ranging::ranging_tx()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
 -callback rx(State::term()) -> {ok, State::term(), Frame::bitstring()} | {error, State::term(), Error::atom()}.
 -callback terminate(State::term(), Reason::term()) -> ok.
 
 -export([start/2]).
--export([turn_on/2]).
+-export([turn_on/3]).
 -export([turn_off/1]).
--export([tx_request/6]).
+-export([tx_request/4]).
 -export([rx_request/1]).
 -export([stop/2]).
 
 %--- Types ---------------------------------------------------------------------
 
--export_type([state/0]).
+-export_type([state/0, input_callback_raw_frame/0]).
 
 -opaque state() :: {Module::module(), Sub::term()}.
+
+-type input_callback_raw_frame() :: fun((Frame                  :: binary(),
+                                         LQI                    :: integer(),
+                                         UWBPRF                 :: pmod_uwb:uwb_PRF(),
+                                         Security               :: ieee802154:security(),
+                                         UWBPreambleRepetitions :: pmod_uwb:uwb_preamble_symbol_repetition(),
+                                         DataRate               :: pmod_uwb:data_rate(),
+                                         Ranging                :: ieee802154:ranging_informations())
+                                        -> ok).
 
 %--- API -----------------------------------------------------------------------
 
@@ -51,15 +60,19 @@
 start(Module, PhyModule) ->
     {Module, Module:init(PhyModule)}.
 
-% @doc turns on the continuous reception 
+% @doc turns on the continuous reception
 % @TODO specify which RX module has to be used
--spec turn_on(State, Callback) -> State when
+-spec turn_on(State, Callback, Ranging) -> Result when
       State    :: state(),
-      Callback :: function(),
-      State    :: state().
-turn_on({Mod, Sub}, Callback) ->
-    {ok, Sub2} = Mod:on(Sub, Callback),
-    {Mod, Sub2}.
+      Callback :: input_callback_raw_frame(),
+      Ranging  :: pmod_uwb:flag(),
+      Result   :: {ok, State} | {error, State, Error},
+      Error    :: atom().
+turn_on({Mod, Sub}, Callback, Ranging) ->
+    case Mod:on(Sub, Callback, Ranging) of
+        {ok, Sub2} -> {ok, {Mod, Sub2}};
+        {error, Sub2, Error} -> {error, {Mod, Sub2}, Error}
+    end.
 
 % @doc turns off the continuous reception
 -spec turn_off(State) -> State when
@@ -77,17 +90,16 @@ turn_off({Mod, Sub}) ->
 % <li> `frame_too_long': The frame was too long for the CAP or GTS</li>
 % <li> `channel_access_failure': the CSMA-CA algorithm failed</li>
 % @end
--spec tx_request(State, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) -> {ok, State} | {error, State, Error} when
-      State              :: state(),
-      Frame              :: bitstring(),
-      MacMinBE           :: mac_min_BE(),
-      MacMaxBE           :: mac_max_BE(),
-      MacMaxCSMABackoffs :: max_max_csma_backoff(),
-      CW0                :: cw0(),
-      State              :: state(),
-      Error              :: atom().
-tx_request({Mod, Sub}, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) ->
-    case Mod:tx(Sub, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0) of
+-spec tx_request(State, Frame, CsmaParams, Ranging) -> Result when
+      State      :: state(),
+      Frame      :: bitstring(),
+      CsmaParams :: csma_params(),
+      Ranging    :: ranging_tx(),
+      State      :: state(),
+      Result     :: {ok, State} | {error, State, Error},
+      Error      :: atom().
+tx_request({Mod, Sub}, Frame, CsmaParams, Ranging) ->
+    case Mod:tx(Sub, Frame, CsmaParams, Ranging) of
         {ok, Sub2} -> {ok, {Mod, Sub2}};
         {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
     end.

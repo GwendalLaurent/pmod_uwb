@@ -9,6 +9,13 @@
 -export([softreset/0, clear_rx_flags/0]).
 -export([disable_rx/0]).
 -export([suspend_frame_filtering/0, resume_frame_filtering/0]).
+-export([signal_power/0]).
+-export([prf_value/0]).
+-export([rx_preamble_repetition/0]).
+-export([rx_data_rate/0]).
+-export([rx_ranging_info/0]).
+-export([std_noise/0]).
+-export([first_path_power_level/0]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -77,7 +84,7 @@
                                         SubRegister==evc_ffr;
                                         SubRegister==evc_ovr;
                                         SubRegister==evc_sto;
-                                        SubRegister==evc_pto; 
+                                        SubRegister==evc_pto;
                                         SubRegister==evc_fwto;
                                         SubRegister==evc_txfs;
                                         SubRegister==evc_hpw;
@@ -85,12 +92,10 @@
 
 
 %--- Types ---------------------------------------------------------------------
--export_type([tx_opts/0]).
-
--export_type([tx_opts/0]).
+-export_type([register_values/0]).
 
 -type regFileID() :: atom().
--opaque tx_opts() :: #tx_opts{}.
+-opaque register_values() :: map().
 
 %--- API -----------------------------------------------------------------------
 
@@ -179,7 +184,7 @@ get_received_data() -> call({get_rx_data}).
 %% '''
 -spec transmit(Data) -> Result when
     Data   :: bitstring(),
-    Result :: ok | {error, any()}.
+    Result :: ok.
 transmit(Data) when is_bitstring(Data) ->
     call({transmit, Data, #tx_opts{}}),
     wait_for_transmission().
@@ -204,7 +209,7 @@ transmit(Data) when is_bitstring(Data) ->
 -spec transmit(Data, Options) -> Result when
     Data :: bitstring(),
     Options :: tx_opts(),
-    Result :: ok | {error, any()}.
+    Result :: ok.
 transmit(Data, Options) ->
     case Options#tx_opts.wait4resp of
         ?ENABLED -> clear_rx_flags();
@@ -340,6 +345,77 @@ suspend_frame_filtering() ->
 resume_frame_filtering() ->
     write(sys_cfg, #{ffen => 2#1}).
 
+%% @doc Returns the estimated value of the signal power in dBm
+%% cf. user manual section 4.7.2
+signal_power() ->
+    C = channel_impulse_resp_pow() , % Channel impulse resonse power value (CIR_PWR)
+    A = case prf_value() of
+            16 -> 113.77;
+            64 -> 121.74
+        end, % Constant. For PRF of 16 MHz = 113.77, for PRF of 64MHz = 121.74
+    N = preamble_acc(), % Preamble accumulation count value (RXPACC but might be ajusted)
+    io:format("C: ~w~n A:~w~n N:~w~n", [C, A, N]),
+    Res = 10 * math:log10((C* math:pow(2, 17))/math:pow(N, 2)) - A,
+    io:format("Estimated signal power: ~p dBm~n", [Res]),
+    io:format("Std noise: ~w~n", [pmod_uwb:read(rx_fqual)]),
+    Res.
+
+preamble_acc() ->
+    #{rxpacc := RXPACC} = read(rx_finfo),
+    #{rxpacc_nosat := RXPACC_NOSAT} = read(drx_conf),
+    if 
+        RXPACC == RXPACC_NOSAT -> RXPACC - 5;
+        true -> RXPACC
+    end.
+
+channel_impulse_resp_pow() ->
+    #{cir_pwr := CIR_PWR} = read(rx_fqual),
+    CIR_PWR.
+
+%% @doc Gives the value of the PRF in MHz 
+-spec prf_value() -> 16 | 64.
+prf_value() ->
+    #{agc_tune1 := AGC_TUNE1} = read(agc_ctrl),
+    case AGC_TUNE1 of
+        16#8870 -> 16;
+        16#889B -> 64
+    end.
+
+%% @doc returns the preamble symbols repetition
+rx_preamble_repetition() ->
+    #{rxpsr := RXPSR} = read(rx_finfo),
+    case RXPSR of
+        0 -> 16;
+        1 -> 64;
+        2 -> 1024;
+        3 -> 4096
+    end.
+
+%% @doc returns the data rate of the received frame in kbps
+rx_data_rate() ->
+    #{rxbr := RXBR} = read(rx_finfo),
+    case RXBR of
+        0 -> 110;
+        1 -> 850;
+        2 -> 6800
+    end.
+
+% @doc returns the value of the `Ranging' bit of the received frame
+rx_ranging_info() ->
+    #{rng := RNG} = read(rx_finfo),
+    RNG.
+
+std_noise() ->
+    #{std_noise := STD_NOISE} = read(rx_fqual),
+    STD_NOISE.
+
+first_path_power_level() ->
+    #{fp_ampl1 := F1} = read(rx_time),
+    #{fp_ampl2 := F2, pp_ampl3 := F3} = read(rx_fqual),
+    A = 113.77,
+    N = preamble_acc(),
+    10 * math:log10((math:pow(F1,2) + math:pow(F2, 2) + math:pow(F3, 2))/math:pow(N, 2)) - A. 
+    
 %--- gen_server Callbacks ------------------------------------------------------
 
 %% @private
@@ -451,8 +527,8 @@ setup_sfd(Bus) ->
 %% @private
 %% Transmit the data using UWB
 %% @param Options is used to set options about the transmission like a transmission delay, etc.
--spec tx(_, Data :: bitstring(), Options :: #tx_opts{}) -> ok.
-tx(Bus, Data, #tx_opts{wait4resp = Wait4resp, w4r_tim = W4rTim, txdlys = TxDlys, tx_delay = TxDelay}) -> 
+-spec tx(grisp_spi:ref(), Data :: binary(), Options :: #tx_opts{}) -> ok.
+tx(Bus, Data, #tx_opts{wait4resp = Wait4resp, w4r_tim = W4rTim, txdlys = TxDlys, tx_delay = TxDelay, ranging = Ranging}) -> 
     % Writing the data that will be sent (w/o CRC)
     DataLength = byte_size(Data) + 2, % DW1000 automatically adds the 2 bytes CRC 
     write_tx_data(Bus, Data),
@@ -465,7 +541,7 @@ tx(Bus, Data, #tx_opts{wait4resp = Wait4resp, w4r_tim = W4rTim, txdlys = TxDlys,
         ?ENABLED -> write_reg(Bus, dx_time, #{dx_time => TxDelay});
         _ -> ok
     end,
-    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => DataLength}),
+    write_reg(Bus, tx_fctrl, #{txboffs => 2#0, tr => Ranging, tflen => DataLength}),
     write_reg(Bus, sys_ctrl, #{txstrt => 2#1, wait4resp => Wait4resp, txdlys => TxDlys}). % start transmission and some options
 
 %% @private
@@ -571,7 +647,7 @@ read_rx_data(Bus, Length) ->
 
 % TODO: check that user isn't trying to write reserved bits by passing res, res1, ... in the map fields
 %% @doc used to write the values in the map given in the Value argument
--spec write_reg(Bus::grisp_spi:ref(), RegFileID::regFileID(), Value::map()) -> ok | {error, any()}.
+-spec write_reg(Bus::grisp_spi:ref(), RegFileID::regFileID(), Value::map()) -> ok.
 % Write each sub-register one by one.
 % If the user tries to write in a read-only sub-register, an error is thrown 
 write_reg(Bus, RegFileID, Value) when ?IS_SRW(RegFileID) ->
@@ -612,7 +688,11 @@ write_tx_data(Bus, Value) when is_binary(Value), (bit_size(Value) < 1025) ->
 %% 
 %% The transmission on the MISO line is done byte by byte starting from the lowest rank byte to the highest rank
 %% Example: dev_id value is 0xDECA0130 but 0x3001CADE is transmitted over the MISO line
--spec reg(encode|decode, Register::regFileID(), bitstring()|map()) -> bitstring()|map().
+-spec reg(Type, Register, Val) -> Ret when
+      Type     :: encode | decode,
+      Register :: regFileID(),
+      Val      :: nonempty_binary() | register_values(),
+      Ret      :: nonempty_binary() | register_values().
 reg(encode, SubRegister, Value) when ?READ_ONLY_SUB_REG(SubRegister) -> error({writing_read_only_sub_register, SubRegister, Value});
 reg(decode, dev_id, Resp) -> 
     <<
@@ -810,14 +890,14 @@ reg(decode, rx_buffer, Resp) ->
     #{ rx_buffer => reverse(Resp)};
 reg(decode, rx_fqual, Resp) -> 
     <<
-        CIR_PWR:16, PP_APL3:16, FP_AMPL2:16, STD_NOISE:16
+        CIR_PWR:16, PP_AMPL3:16, FP_AMPL2:16, STD_NOISE:16
     >> = Resp,
     #{
-        cir_pwr => CIR_PWR, pp_apl3 => PP_APL3, fp_ampl2 => FP_AMPL2, std_noise => STD_NOISE
+        cir_pwr => CIR_PWR, pp_ampl3 => PP_AMPL3, fp_ampl2 => FP_AMPL2, std_noise => STD_NOISE
     };
 reg(decode, rx_ttcki, Resp) -> 
     #{
-        rx_ttcki => reverse(Resp)
+        rxttcki => reverse(Resp)
     };
 reg(decode, rx_ttcko, Resp) ->
     <<
@@ -1156,8 +1236,8 @@ reg(encode, drx_tune4h, Val) ->
     >>);
 reg(decode, drx_conf, Resp) ->
     <<
-        %RXPACC_NOSAT:8, % present in the user manual but not in the driver code in C
-        _:8, % Placeholder for the remaining 8 bits
+        RXPACC_NOSAT:8, % present in the user manual but not in the driver code in C
+        % _:8, % Placeholder for the remaining 8 bits
         DRX_CAR_INT:24,
         DRX_TUNE4H:16,
         DRX_PRETOC:16,
@@ -1178,8 +1258,8 @@ reg(decode, drx_conf, Resp) ->
         drx_tune4h => DRX_TUNE4H,
         drx_car_int => DRX_CAR_INT,
         drx_sfdtoc => DRX_SFDTOC,
-        drx_pretoc => DRX_PRETOC %,
-        % rxpacc_nosat => RXPACC_NOSAT
+        drx_pretoc => DRX_PRETOC,
+        rxpacc_nosat => RXPACC_NOSAT
     };
 reg(encode, rf_conf, Val) ->
     #{

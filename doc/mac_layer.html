@@ -19,7 +19,7 @@
 <tr><td valign="top"><a href="#init-1">init/1</a></td><td>Initialize the MAC layer.</td></tr>
 <tr><td valign="top"><a href="#rx-1">rx/1</a></td><td>Performs the reception of a single packet.</td></tr>
 <tr><td valign="top"><a href="#rx_off-1">rx_off/1</a></td><td>Turns off the continuous reception.</td></tr>
-<tr><td valign="top"><a href="#rx_on-2">rx_on/2</a></td><td>Turns on the continuous reception.</td></tr>
+<tr><td valign="top"><a href="#rx_on-3">rx_on/3</a></td><td>Turns on the continuous reception.</td></tr>
 <tr><td valign="top"><a href="#set-3">set/3</a></td><td></td></tr>
 <tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td>clean up function to stop the mac layer.</td></tr>
 <tr><td valign="top"><a href="#tx-4">tx/4</a></td><td>transmits a frame using the physical layer.</td></tr>
@@ -35,7 +35,8 @@
 
 <h3 class="function"><a name="init-1">init/1</a></h3>
 <div class="spec">
-<p><tt>init(X1) -&gt; any()</tt></p>
+<p><tt>init(Params) -&gt; State</tt>
+<ul class="definitions"><li><tt>Params = map()</tt></li><li><tt>State = map()</tt></li></ul></p>
 <p> </p>
 </div><p><p>Initialize the MAC layer</p>
 
@@ -48,7 +49,8 @@ If you want to use it, it has to be activated later on.</p>
 
 <h3 class="function"><a name="rx-1">rx/1</a></h3>
 <div class="spec">
-<p><tt>rx(State) -&gt; any()</tt></p>
+<p><tt>rx(State) -&gt; {ok, State, Frame} | {error, State, Error}</tt>
+<ul class="definitions"><li><tt>State = map()</tt></li><li><tt>Frame = <a href="#type-frame">frame()</a></tt></li><li><tt>Error = atom()</tt></li></ul></p>
 <p> </p>
 </div><p>Performs the reception of a single packet
 </p>
@@ -59,9 +61,10 @@ If you want to use it, it has to be activated later on.</p>
 <p> </p>
 </div><p>Turns off the continuous reception</p>
 
-<h3 class="function"><a name="rx_on-2">rx_on/2</a></h3>
+<h3 class="function"><a name="rx_on-3">rx_on/3</a></h3>
 <div class="spec">
-<p><tt>rx_on(State, Callback) -&gt; any()</tt></p>
+<p><tt>rx_on(State, Callback, Ranging) -&gt; {ok, State}</tt>
+<ul class="definitions"><li><tt>State = map()</tt></li><li><tt>Callback = <a href="#type-input_callback">input_callback()</a></tt></li><li><tt>Ranging = <a href="http://www.erlang.org/edoc/doc/robot/doc/pmod_uwb.html#type-flag">pmod_uwb:flag()</a></tt></li></ul></p>
 <p> </p>
 </div><p><p>Turns on the continuous reception</p>
 
@@ -84,7 +87,8 @@ If you want to use it, it has to be activated later on.</p>
 
 <h3 class="function"><a name="tx-4">tx/4</a></h3>
 <div class="spec">
-<p><tt>tx(State, FrameControl, MacHeader, Payload) -&gt; any()</tt></p>
+<p><tt>tx(State, FrameControl, MacHeader, Payload) -&gt; {ok, State} | {error, State, Error}</tt>
+<ul class="definitions"><li><tt>State = map()</tt></li><li><tt>FrameControl = <a href="#type-frame_control">frame_control()</a></tt></li><li><tt>MacHeader = <a href="#type-mac_header">mac_header()</a></tt></li><li><tt>Payload = bitstring()</tt></li><li><tt>Error = <a href="#type-tx_error">tx_error()</a></tt></li></ul></p>
 <p> </p>
 </div><p>transmits a frame using the physical layer</p>
 <hr>

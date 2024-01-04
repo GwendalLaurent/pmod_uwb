@@ -7,7 +7,7 @@
 -behaviour(gen_mac_tx).
 
 -export([init/1]).
--export([tx/7]).
+-export([tx/4]).
 -export([terminate/2]).
 
 %--- Macros --------------------------------------------------------------------
@@ -37,18 +37,18 @@ init(PhyMod) -> #{phy_layer => PhyMod}.
 %% @param MacMinBE: The minimum value of the backoff exponent as described in the standard
 %% @param MacMaxCSMABackoffs: The maximum amount of time the CSMA algorithm will backoff if the channel is busy
 %% @param CW0: Not needed in this version of the algorithm. Ignored by this function
--spec tx(State, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, CW0, TxOpts) -> {ok, State} | {error, State, channel_access_failure} when
+-spec tx(State, Frame, CsmaParams, TxOpts) -> {ok, State} | {error, State, channel_access_failure} when
       State              :: map(),
       Frame              :: bitstring(),
-      MacMinBE           :: mac_min_BE(),
-      MacMaxBE           :: mac_max_BE(),
-      MacMaxCSMABackoffs :: max_max_csma_backoff(),
-      CW0                :: cw0(),
-      TxOpts             :: #tx_opts{}.
-tx(#{phy_layer := PhyMod} = State, Frame, MacMinBE, MacMaxBE, MacMaxCSMABackoffs, _, TxOpts) ->
+      CsmaParams         :: csma_params(),
+      TxOpts             :: tx_opts().
+tx(#{phy_layer := PhyMod} = State, Frame, CsmaParams, TxOpts) ->
     PhyMod:set_preamble_timeout(?CCA_DURATION),
-    Ret = case try_cca(PhyMod, 0, MacMinBE, MacMaxBE, MacMaxCSMABackoffs) of 
-              ok -> 
+    MacMinBE = CsmaParams#csma_params.mac_min_BE,
+    MacMaxBE = CsmaParams#csma_params.mac_max_BE,
+    MacMaxCSMABackoffs = CsmaParams#csma_params.mac_max_csma_backoff,
+    Ret = case try_cca(PhyMod, 0, MacMinBE, MacMaxBE, MacMaxCSMABackoffs) of
+              ok ->
                   PhyMod:transmit(Frame, TxOpts),
                   {ok, State};
               error ->
@@ -66,7 +66,7 @@ terminate(_State, _Reason) -> ok.
       NB                 :: non_neg_integer(),
       BE                 :: non_neg_integer(),
       MacMaxBE           :: mac_max_BE(),
-      MacMaxCSMABackoffs :: max_max_csma_backoff(),
+      MacMaxCSMABackoffs :: mac_max_csma_backoff(),
       Result             :: ok | error.
 try_cca(_, NB, _, _, MacMaxCSMABackoffs) when NB > MacMaxCSMABackoffs ->
     error;

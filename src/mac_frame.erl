@@ -41,7 +41,9 @@ encode_ack(FramePending, Seqnum) ->
 % @returns the MAC header in a bitstring
 % @end
 %-------------------------------------------------------------------------------
--spec build_mac_header(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}) -> bitstring().
+-spec build_mac_header(FrameControl, MacHeader) -> binary() when
+      FrameControl :: frame_control(),
+      MacHeader    :: mac_header().
 build_mac_header(FrameControl, MacHeader) ->
     FC = build_frame_control(FrameControl),
 
@@ -68,7 +70,11 @@ build_mac_header(FrameControl, MacHeader) ->
 % @return A tuple containing the decoded frame control, the decoded mac header and the payload
 % @end
 %-------------------------------------------------------------------------------
--spec decode(Data :: bitstring()) -> {FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()}. 
+-spec decode(Data) -> {FrameControl, MacHeader, Payload} when
+      Data         :: binary(),
+      FrameControl :: frame_control(),
+      MacHeader    :: mac_header(),
+      Payload      :: bitstring(). 
 decode(Data) ->
     <<FC:16/bitstring, Seqnum:8, Rest/bitstring>> = Data,
     FrameControl = decode_frame_control(FC),
@@ -79,7 +85,7 @@ decode(Data) ->
 % @doc Decodes the remaining sequence of bit present in the payload after the seqnum
 % @end
 %-------------------------------------------------------------------------------
--spec decode_rest(FrameControl :: frame_control(), Seqnum::integer(), Rest::bitstring()) -> {FrameControl::frame_control(), MacHeader::mac_header(), Payload::bitstring()}.  
+-spec decode_rest(FrameControl :: frame_control(), Seqnum::integer(), Rest::binary()) -> {FrameControl::frame_control(), MacHeader::mac_header(), Payload::binary()}.  
 decode_rest(#frame_control{frame_type = ?FTYPE_ACK} = FrameControl, Seqnum, _Rest) -> % Might cause an issue if piggybacking is used (allowed in IEEE 802.15.4?)
     {FrameControl, #mac_header{seqnum = Seqnum}, <<>>};
 decode_rest(FrameControl, Seqnum, Rest) ->
@@ -89,7 +95,16 @@ decode_rest(FrameControl, Seqnum, Rest) ->
 
 % Note extended addresses and PAN ID are used in the case of inter-PAN communication
 % In inter PAN communication, it can be omitted but it's not mandatory
--spec decode_mac_header(DestAddrMode::term(), SrcAddrMode::term(), PanIdCompr::term(), Bits::bitstring()) -> {DestPAN::bitstring(), DestAddr::bitstring(), SrcPAN::bitstring(), SrcAddr::bitstring(), Payload::bitstring()}.
+-spec decode_mac_header(DestAddrMode, SrcAddrMode, PanIdCompr, Bits) -> {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload} when
+      DestAddrMode :: flag(),
+      SrcAddrMode  :: flag(),
+      PanIdCompr   :: flag(),
+      Bits         :: bitstring(),
+      DestPAN      :: binary(),
+      DestAddr     :: binary(),
+      SrcPAN       :: binary(),
+      SrcAddr      :: binary(),
+      Payload      :: binary().
 decode_mac_header(?EXTENDED, ?EXTENDED, ?DISABLED, <<DestPAN:16/bitstring, DestAddr:64/bitstring, SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) -> 
     {DestPAN, DestAddr, SrcPAN, SrcAddr, Payload};
 
@@ -136,7 +151,8 @@ decode_mac_header(_SrcAddrMode, _DestAddrMode, _PanIdCompr, _Bits) ->
 % @param AR: ACK request
 % @end
 %-------------------------------------------------------------------------------
--spec build_frame_control(FrameControl :: #frame_control{}) -> bitstring().
+-spec build_frame_control(FrameControl) -> <<_:16>> when
+      FrameControl :: frame_control().
 build_frame_control(FrameControl) ->
     #frame_control{pan_id_compr=PanIdCompr,ack_req=AckReq,frame_pending=FramePending,sec_en=SecEn,
                    frame_type=FrameType,src_addr_mode=SrcAddrMode,frame_version=FrameVersion,dest_addr_mode=DestAddrMode} = FrameControl,
@@ -148,7 +164,8 @@ build_frame_control(FrameControl) ->
 % @doc Decode the frame control given in a bitstring form in the parameters
 % @end
 %-------------------------------------------------------------------------------
--spec decode_frame_control(FC :: bitstring()) -> frame_control().
+-spec decode_frame_control(FC) -> frame_control() when
+      FC :: <<_:16>>.
 decode_frame_control(FC) -> 
     <<_:1, PanIdCompr:1, AckReq:1, FramePending:1, SecEn:1, FrameType:3, SrcAddrMode:2, FrameVersion:2, DestAddrMode:2, _:2>> = FC,
     #frame_control{frame_type = FrameType, sec_en = SecEn, frame_pending = FramePending, ack_req = AckReq, pan_id_compr = PanIdCompr, dest_addr_mode = DestAddrMode, frame_version = FrameVersion, src_addr_mode = SrcAddrMode}.

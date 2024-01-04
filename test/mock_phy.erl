@@ -19,6 +19,12 @@
 -export([read/1]).
 -export([write/2]).
 
+-export([rx_ranging_info/0]).
+-export([signal_power/0]).
+-export([rx_preamble_repetition/0]).
+-export([rx_data_rate/0]).
+-export([prf_value/0]).
+
 %%% gen_server callbacks
 -export([init/1]).
 -export([handle_call/3]).
@@ -66,6 +72,65 @@ write(Reg, Val) ->
 
 disable_rx() ->
     gen_server:call(?NAME, {rx_off}).
+
+%--- API: Getters --------------------------------------------------------------
+rx_ranging_info() ->
+    #{rng := RNG} = read(rx_finfo),
+    RNG.
+
+%% @doc Returns the estimated value of the signal power in dBm
+%% cf. user manual section 4.7.2
+signal_power() ->
+    C = channel_impulse_resp_pow() , % Channel impulse resonse power value (CIR_PWR)
+    A = case prf_value() of
+            16 -> 113.77;
+            64 -> 121.74
+        end, % Constant. For PRF of 16 MHz = 113.77, for PRF of 64MHz = 121.74
+    N = preamble_acc(), % Preamble accumulation count value (RXPACC but might be ajusted)
+    Num = C* math:pow(2, 17),
+    Dem = math:pow(N, 2),
+    Log = math:log10(Num / Dem),
+    10 *  Log - A.
+
+preamble_acc() ->
+    #{rxpacc := RXPACC} = read(rx_finfo),
+    #{rxpacc_nosat := RXPACC_NOSAT} = read(drx_conf),
+    if 
+        RXPACC == RXPACC_NOSAT -> RXPACC;
+        true -> RXPACC - 5
+    end.
+
+channel_impulse_resp_pow() ->
+    #{cir_pwr := CIR_POW} = read(rx_fqual),
+    CIR_POW.
+
+%% @doc Gives the value of the PRF in MHz 
+-spec prf_value() -> 16 | 64.
+prf_value() ->
+    #{agc_tune1 := AGC_TUNE1} = read(agc_ctrl),
+    case AGC_TUNE1 of
+        16#8870 -> 16;
+        16#889B -> 64
+    end.
+
+%% @doc returns the preamble symbols repetition
+rx_preamble_repetition() ->
+    #{rxpsr := RXPSR} = read(rx_finfo),
+    case RXPSR of
+        0 -> 16;
+        1 -> 64;
+        2 -> 1024;
+        3 -> 4096
+    end.
+
+%% @doc returns the data rate of the received frame in kbps
+rx_data_rate() ->
+    #{rxbr := RXBR} = read(rx_finfo),
+    case RXBR of
+        0 -> 110;
+        1 -> 850;
+        3 -> 6800
+    end.
 
 %%% gen_server callbacks
 init(_Params) ->

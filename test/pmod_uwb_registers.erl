@@ -31,10 +31,37 @@ default() ->
                    ffab => 0,
                    ffbc => 0,
                    ffen => 0},
+      tx_fctrl => #{txboffs => 0, % 0x08
+                    pe => 1,
+                    txpsr => 1,
+                    txprf => 1,
+                    tr => 0,
+                    txbr => 2,
+                    r => 0,
+                    tfle => 0,
+                    tflen => 12},
       rx_fwto => #{rxfwto => 0}, % 0x0C
+      rx_finfo => #{rxpacc => 1025, % 0x10
+                     rxpsr => 0,
+                     rxprfr => 0,
+                     rng => 0,
+                     rxbr => 0,
+                     rxfle => 0,
+                     rxflen => 0},
+      rx_fqual => #{fp_ampl2 => 0, % 0x12
+                    std_noise => 0,
+                    cir_pwr => 1,
+                    pp_ampl3 => 0},
       rx_sniff => #{sniff_offt => 0, sniff_ont => 0}, % 0x1D
+      agc_ctrl => #{agc_ctrl1 => #{dis_am => 1},
+                    agc_tune1 => 16#8870,
+                    agc_tune2 => 16#2502A907,
+                    agc_tune3 => 16#0035,
+                    agc_stat1 => #{edv2 => 0,
+                                   edg1 => 1}},
       % DRX_CONF isn't complete yet
-      drx_conf => #{drx_pretoc => 0}, % 0x27
+      drx_conf => #{drx_pretoc => 0, % 0x27
+                    rxpacc_nosat => 0}, 
       % PMSC isn't complete yet
       pmsc => #{pmsc_ctrl0 => #{},  % 0x36
                 pmsc_ctrl1 => #{arx2init => 0}}

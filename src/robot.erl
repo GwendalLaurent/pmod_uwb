@@ -6,12 +6,20 @@
 -include("ieee802154.hrl").
 
 -export([tx/0]).
+-export([tx_ranging/0]).
 -export([rx/0]).
 -export([rx_on/0]).
 -export([rx_off/0]).
+
+% Benchmarking
 -export([tx_benchmark/0]).
 -export([rx_benchmark/0]).
+
+% CSMA tests
 -export([jammer/0]).
+
+% Ranging
+-export([rx_ranging/0]).
 
 % Callbacks
 -export([start/2]).
@@ -37,9 +45,27 @@ tx() ->
     MacHeader = #mac_header{},
     ieee802154:transmission(FrameControl, MacHeader, <<"Test">>).
 
-rx_callback({_FrameControl, _MacHeader, _Payload}) ->
-    ok.
-    % io:format("Received frame with seqnum: ~w - Payload: ~w ~n", [_MacHeader#mac_header.seqnum, _Payload]).
+tx_ranging() ->
+    pmod_uwb:set_preamble_timeout(?CCA_DURATION),
+    FrameControl = #frame_control{},
+    MacHeader = #mac_header{},
+    ieee802154:transmission(FrameControl, MacHeader, <<"Test">>, ?ALL_RANGING).
+
+
+-spec rx_callback(Frame, LinkQuality, Security, Ranging) -> ok when
+      Frame       :: frame(),
+      LinkQuality :: integer(),
+      Security    :: ieee802154:security(),
+      Ranging     :: ieee802154:ranging_informations().
+rx_callback({_FrameControl, _MacHeader, _Payload}, LQI, Security, Ranging) ->
+    io:format("------ Frame report ------~n"),
+    io:format("Link quality: ~p ~n", [LQI]),
+    io:format("Security: ~w~n", [Security]),
+    io:format("Ranging: ~w~n", [Ranging]),
+    io:format("Called twice ?~n"),
+    io:format("-------------------------~n").
+    % io:format("Received frame with seqnum: ~w - Payload: ~w ~n",
+    %           [_MacHeader#mac_header.seqnum, _Payload]).
 
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().
@@ -57,8 +83,9 @@ jammer() ->
     ieee802154:rx_off(),
     jammer(1000).
 
-jammer(0) -> ok;
-jammer(N) -> 
+jammer(0) ->
+    ok;
+jammer(N) ->
     pmod_uwb:write_tx_data(?JAMMING_DATA),
     pmod_uwb:write(tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => ?DATALENGTH}),
     pmod_uwb:write(sys_ctrl, #{txstrt => 2#1, txdlys => 0}), % start transmission and some options
@@ -90,12 +117,17 @@ rx() ->
     ieee802154:reception(),
     rx().
 
-start(_Type, _Args) -> 
+rx_ranging() ->
+    ieee802154:set_pan_id(?PANID),
+    ieee802154:set_mac_short_address(?RECEIVER_ADDR),
+    ieee802154:rx_on(?ENABLED).
+
+start(_Type, _Args) ->
     {ok, Supervisor} = robot_sup:start_link(),
     grisp:add_device(spi2, pmod_uwb),
-    ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer, input_callback = fun rx_callback/1}),
+    ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer, input_callback = fun rx_callback/4}),
     % pmod_uwb:write(rx_fwto, #{rxfwto => 16#FFFF}),
-    % pmod_uwb:write(sys_cfg, #{rxwtoe => 2#1}), 
+    % pmod_uwb:write(sys_cfg, #{rxwtoe => 2#1}),
     % ieee802154:rx_on(),
     {ok, Supervisor}.
 

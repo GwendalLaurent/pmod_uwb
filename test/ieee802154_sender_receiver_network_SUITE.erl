@@ -71,7 +71,7 @@ init_per_testcase(sender, Config) ->
 
 init_per_testcase(sender_rx_loop_reply, Config) ->
     Network = ?config(network, Config),
-    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(sender_rx_loop_reply, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun(Frame) -> input_callback(Frame) end),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(sender_rx_loop_reply, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>,fun input_callback/4),
     init_ets_callback_table(Node),
     [{sender_rx_loop_reply, NodeRef} | Config];
 
@@ -87,25 +87,25 @@ init_per_testcase(outsider, Config) ->
 
 init_per_testcase(receiver_callback, Config) ->
     Network = ?config(network, Config),
-    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(receiver_callback, Network, mac_extended_address, <<16#CAFEDECA00000002:64>>, fun(Frame) -> input_callback(Frame) end),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(receiver_callback, Network, mac_extended_address, <<16#CAFEDECA00000002:64>>, fun input_callback/4),
     init_ets_callback_table(Node),
     [{receiver_callback, NodeRef} | Config];
 
 init_per_testcase(receiver_rx_loop_reply, Config) ->
     Network = ?config(network, Config),
-    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(receiver_rx_loop_reply, Network, mac_extended_address, <<16#CAFEDECA00000002:64>>, fun(Frame) -> input_callback(Frame) end),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(receiver_rx_loop_reply, Network, mac_extended_address, <<16#CAFEDECA00000002:64>>, fun input_callback/4),
     init_ets_callback_table(Node),
     [{receiver_rx_loop_reply, NodeRef} | Config];
 
 init_per_testcase(sender_busy_medium, Config) ->
     Network = ?config(network, Config),
-    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(sender_busy_medium, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun(Frame) -> input_callback(Frame) end),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(sender_busy_medium, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun input_callback/4),
     init_ets_callback_table(Node),
     [{sender_busy_medium, NodeRef} | Config];
 
 init_per_testcase(jammer, Config) -> 
     Network = ?config(network, Config),
-    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(jammer, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun(Frame) -> input_callback(Frame) end),
+    {_, Node} = NodeRef = ieee802154_node:boot_ieee802154_node(jammer, Network, mac_extended_address, <<16#CAFEDECA00000001:64>>, fun input_callback/4),
     init_ets_callback_table(Node),
     [{jammer, NodeRef} | Config];
 
@@ -133,11 +133,11 @@ receiver_callback(Config) ->
     {_, Node} = ?config(receiver_callback, Config),
     ExpectedFrame = get_expected_frame(Config),
     ok = erpc:call(Node, ieee802154, rx_on, []),
-    {error, unknown_request} = catch erpc:call(Node, ieee802154, reception, []),
+    {error, rx_already_on} = erpc:call(Node, ieee802154, reception, []),
     ct:sleep(200),
     [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]),
     [{_, [ExpectedFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]),
-    ok = erpc:call(Node, ieee802154, rx_on, []),
+    {error, rx_already_on} = erpc:call(Node, ieee802154, rx_on, []),
     ok = erpc:call(Node, ieee802154, rx_off, []),
     ok = erpc:call(Node, ieee802154, rx_off, []).
 
@@ -192,7 +192,7 @@ jammer(Config) ->
 get_expected_frame(Config) ->
     ?config(expected_frame, Config).
 
-input_callback(Frame) ->
+input_callback(Frame, LQI, Security, Ranging) ->
     [{_, NbRxFrames}] = ets:lookup(callback_table, nb_rx_frames),
     ets:insert(callback_table, {nb_rx_frames, NbRxFrames+1}),
     [{_, Frames}] = ets:lookup(callback_table, rx_frames),
