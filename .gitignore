@@ -6,3 +6,5 @@ erlang_ls.config
 elvis.config
 
 *.old
+
+grisp/
