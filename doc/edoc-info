@@ -1,5 +1,4 @@
 %% encoding: UTF-8
 {application,robot}.
 {modules,[duty_cycle_non_beacon,gen_duty_cycle,gen_mac_layer,gen_mac_tx,
-          ieee802154,mac_frame,mac_layer,pmod_uwb,robot,two_way_ranging,
-          unslotted_CSMA]}.
+          ieee802154,mac_frame,mac_layer,pmod_uwb,robot,unslotted_CSMA]}.

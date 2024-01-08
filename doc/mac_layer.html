@@ -10,9 +10,19 @@
 <hr>
 
 <h1>Module mac_layer</h1>
-<ul class="index"><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>
+<ul class="index"><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>
 
 <p><b>Behaviours:</b> <a href="gen_mac_layer.html"><tt>gen_mac_layer</tt></a>.</p>
+
+<h2><a name="types">Data Types</a></h2>
+
+<h3 class="typedecl"><a name="type-pib_attributes">pib_attributes()</a></h3>
+<p><tt>pib_attributes() = #{cw0 := <a href="#type-cw0">cw0()</a>, mac_max_BE := <a href="#type-mac_max_BE">mac_max_BE()</a>, mac_min_BE := <a href="#type-mac_max_BE">mac_max_BE()</a>, mac_max_csma_backoffs := <a href="#type-mac_max_csma_backoff">mac_max_csma_backoff()</a>, term() =&gt; term()}</tt></p>
+
+
+<h3 class="typedecl"><a name="type-state">state()</a></h3>
+<p><tt>state() = #{phy_layer := module(), duty_cycle := <a href="http://www.erlang.org/edoc/doc/robot/doc/gen_duty_cycle.html#type-state">gen_duty_cycle:state()</a>, attributes := <a href="#type-pib_attributes">pib_attributes()</a>, ranging := <a href="http://www.erlang.org/edoc/doc/robot/doc/pmod_uwb.html#type-flag">pmod_uwb:flag()</a>, term() =&gt; term()}</tt></p>
+
 
 <h2><a name="index">Function Index</a></h2>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#get-2">get/2</a></td><td></td></tr>
@@ -22,21 +32,22 @@
 <tr><td valign="top"><a href="#rx_on-3">rx_on/3</a></td><td>Turns on the continuous reception.</td></tr>
 <tr><td valign="top"><a href="#set-3">set/3</a></td><td></td></tr>
 <tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td>clean up function to stop the mac layer.</td></tr>
-<tr><td valign="top"><a href="#tx-4">tx/4</a></td><td>transmits a frame using the physical layer.</td></tr>
+<tr><td valign="top"><a href="#tx-3">tx/3</a></td><td>transmits a frame using the physical layer.</td></tr>
 </table>
 
 <h2><a name="functions">Function Details</a></h2>
 
 <h3 class="function"><a name="get-2">get/2</a></h3>
 <div class="spec">
-<p><tt>get(State::term(), Attribute::<a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibAttribute">gen_mac_layer:pibAttribute()</a>) -&gt; {ok, State::term(), Value::term()} | {error, State::term(), unsupported_attribute}</tt><br></p>
+<p><tt>get(State, Attribute) -&gt; {ok, State, Value} | {error, State, unsupported_attribute}</tt>
+<ul class="definitions"><li><tt>State = <a href="#type-state">state()</a></tt></li><li><tt>Attribute = <a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pib_attributes">gen_mac_layer:pib_attributes()</a></tt></li><li><tt>Value = term()</tt></li></ul></p>
 <p> </p>
 </div>
 
 <h3 class="function"><a name="init-1">init/1</a></h3>
 <div class="spec">
 <p><tt>init(Params) -&gt; State</tt>
-<ul class="definitions"><li><tt>Params = map()</tt></li><li><tt>State = map()</tt></li></ul></p>
+<ul class="definitions"><li><tt>Params = #{phy_layer := module(), duty_cycle := module()}</tt></li><li><tt>State = <a href="#type-state">state()</a></tt></li></ul></p>
 <p> </p>
 </div><p><p>Initialize the MAC layer</p>
 
@@ -50,21 +61,22 @@ If you want to use it, it has to be activated later on.</p>
 <h3 class="function"><a name="rx-1">rx/1</a></h3>
 <div class="spec">
 <p><tt>rx(State) -&gt; {ok, State, Frame} | {error, State, Error}</tt>
-<ul class="definitions"><li><tt>State = map()</tt></li><li><tt>Frame = <a href="#type-frame">frame()</a></tt></li><li><tt>Error = atom()</tt></li></ul></p>
+<ul class="definitions"><li><tt>State = <a href="#type-state">state()</a></tt></li><li><tt>Frame = <a href="#type-frame">frame()</a></tt></li><li><tt>Error = atom()</tt></li></ul></p>
 <p> </p>
 </div><p>Performs the reception of a single packet
 </p>
 
 <h3 class="function"><a name="rx_off-1">rx_off/1</a></h3>
 <div class="spec">
-<p><tt>rx_off(State) -&gt; any()</tt></p>
+<p><tt>rx_off(State) -&gt; {ok, State}</tt>
+<ul class="definitions"><li><tt>State = <a href="#type-state">state()</a></tt></li></ul></p>
 <p> </p>
 </div><p>Turns off the continuous reception</p>
 
 <h3 class="function"><a name="rx_on-3">rx_on/3</a></h3>
 <div class="spec">
-<p><tt>rx_on(State, Callback, Ranging) -&gt; {ok, State}</tt>
-<ul class="definitions"><li><tt>State = map()</tt></li><li><tt>Callback = <a href="#type-input_callback">input_callback()</a></tt></li><li><tt>Ranging = <a href="http://www.erlang.org/edoc/doc/robot/doc/pmod_uwb.html#type-flag">pmod_uwb:flag()</a></tt></li></ul></p>
+<p><tt>rx_on(State, Callback, RangingFlag) -&gt; {ok, State} | {error, State, Error}</tt>
+<ul class="definitions"><li><tt>State = <a href="#type-state">state()</a></tt></li><li><tt>Callback = <a href="#type-input_callback">input_callback()</a></tt></li><li><tt>RangingFlag = <a href="http://www.erlang.org/edoc/doc/robot/doc/pmod_uwb.html#type-flag">pmod_uwb:flag()</a></tt></li><li><tt>Error = atom()</tt></li></ul></p>
 <p> </p>
 </div><p><p>Turns on the continuous reception</p>
 
@@ -75,7 +87,8 @@ If you want to use it, it has to be activated later on.</p>
 
 <h3 class="function"><a name="set-3">set/3</a></h3>
 <div class="spec">
-<p><tt>set(State::term(), Attribute::<a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibAttribute">gen_mac_layer:pibAttribute()</a>, Value::term()) -&gt; {ok, State::term()} | {error, State::term(), <a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibSetError">gen_mac_layer:pibSetError()</a>}</tt><br></p>
+<p><tt>set(State, Attribute, Value) -&gt; {ok, State} | {error, State, Error}</tt>
+<ul class="definitions"><li><tt>State = <a href="#type-state">state()</a></tt></li><li><tt>Attribute = <a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibAttribute">gen_mac_layer:pibAttribute()</a></tt></li><li><tt>Value = term()</tt></li><li><tt>Error = <a href="http://www.erlang.org/edoc/doc/robot/doc/gen_mac_layer.html#type-pibSetError">gen_mac_layer:pibSetError()</a></tt></li></ul></p>
 <p> </p>
 </div>
 
@@ -85,10 +98,10 @@ If you want to use it, it has to be activated later on.</p>
 <p> </p>
 </div><p>clean up function to stop the mac layer</p>
 
-<h3 class="function"><a name="tx-4">tx/4</a></h3>
+<h3 class="function"><a name="tx-3">tx/3</a></h3>
 <div class="spec">
-<p><tt>tx(State, FrameControl, MacHeader, Payload) -&gt; {ok, State} | {error, State, Error}</tt>
-<ul class="definitions"><li><tt>State = map()</tt></li><li><tt>FrameControl = <a href="#type-frame_control">frame_control()</a></tt></li><li><tt>MacHeader = <a href="#type-mac_header">mac_header()</a></tt></li><li><tt>Payload = bitstring()</tt></li><li><tt>Error = <a href="#type-tx_error">tx_error()</a></tt></li></ul></p>
+<p><tt>tx(State, Frame, Ranging) -&gt; Result</tt>
+<ul class="definitions"><li><tt>State = <a href="#type-state">state()</a></tt></li><li><tt>Frame = <a href="#type-frame">frame()</a></tt></li><li><tt>Ranging = <a href="#type-ranging_tx">ranging_tx()</a></tt></li><li><tt>Result = {ok, State, RangingInfo} | {error, State, <a href="#type-tx_error">tx_error()</a>}</tt></li><li><tt>RangingInfo = <a href="#type-ranging_informations">ranging_informations()</a></tt></li></ul></p>
 <p> </p>
 </div><p>transmits a frame using the physical layer</p>
 <hr>

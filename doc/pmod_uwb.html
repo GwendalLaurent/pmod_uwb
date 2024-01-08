@@ -20,14 +20,15 @@
 <p><tt>regFileID() = atom()</tt></p>
 
 
-<h3 class="typedecl"><a name="type-tx_opts">tx_opts()</a></h3>
-<p><b>abstract datatype</b>: <tt>tx_opts()</tt></p>
+<h3 class="typedecl"><a name="type-register_values">register_values()</a></h3>
+<p><b>abstract datatype</b>: <tt>register_values()</tt></p>
 
 
 <h2><a name="index">Function Index</a></h2>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#clear_rx_flags-0">clear_rx_flags/0</a></td><td></td></tr>
 <tr><td valign="top"><a href="#disable_preamble_timeout-0">disable_preamble_timeout/0</a></td><td></td></tr>
 <tr><td valign="top"><a href="#disable_rx-0">disable_rx/0</a></td><td>Disables the reception on the pmod.</td></tr>
+<tr><td valign="top"><a href="#first_path_power_level-0">first_path_power_level/0</a></td><td></td></tr>
 <tr><td valign="top"><a href="#get_received_data-0">get_received_data/0</a></td><td>Retrieves the data received on the UWB antenna.</td></tr>
 <tr><td valign="top"><a href="#prf_value-0">prf_value/0</a></td><td>Gives the value of the PRF in MHz.</td></tr>
 <tr><td valign="top"><a href="#read-1">read/1</a></td><td>read a register file.</td></tr>
@@ -43,6 +44,7 @@
   cf.</td></tr>
 <tr><td valign="top"><a href="#softreset-0">softreset/0</a></td><td>Performs a reset of the IC following the procedure (cf.</td></tr>
 <tr><td valign="top"><a href="#start_link-2">start_link/2</a></td><td></td></tr>
+<tr><td valign="top"><a href="#std_noise-0">std_noise/0</a></td><td></td></tr>
 <tr><td valign="top"><a href="#suspend_frame_filtering-0">suspend_frame_filtering/0</a></td><td></td></tr>
 <tr><td valign="top"><a href="#transmit-1">transmit/1</a></td><td>Transmit data with the default options (i.e.</td></tr>
 <tr><td valign="top"><a href="#transmit-2">transmit/2</a></td><td>Performs a transmission with the specified options.</td></tr>
@@ -70,6 +72,12 @@
 <p><tt>disable_rx() -&gt; any()</tt></p>
 <p> </p>
 </div><p>Disables the reception on the pmod</p>
+
+<h3 class="function"><a name="first_path_power_level-0">first_path_power_level/0</a></h3>
+<div class="spec">
+<p><tt>first_path_power_level() -&gt; any()</tt></p>
+<p> </p>
+</div>
 
 <h3 class="function"><a name="get_received_data-0">get_received_data/0</a></h3>
 <div class="spec">
@@ -180,6 +188,12 @@
 <p> </p>
 </div>
 
+<h3 class="function"><a name="std_noise-0">std_noise/0</a></h3>
+<div class="spec">
+<p><tt>std_noise() -&gt; any()</tt></p>
+<p> </p>
+</div>
+
 <h3 class="function"><a name="suspend_frame_filtering-0">suspend_frame_filtering/0</a></h3>
 <div class="spec">
 <p><tt>suspend_frame_filtering() -&gt; any()</tt></p>
@@ -189,7 +203,7 @@
 <h3 class="function"><a name="transmit-1">transmit/1</a></h3>
 <div class="spec">
 <p><tt>transmit(Data) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Data = bitstring()</tt></li><li><tt>Result = ok | {error, any()}</tt></li></ul></p>
+<ul class="definitions"><li><tt>Data = bitstring()</tt></li><li><tt>Result = ok</tt></li></ul></p>
 <p> </p>
 </div><p><p>Transmit data with the default options (i.e. don't wait for resp, ...)</p>
  
@@ -201,7 +215,7 @@
 <h3 class="function"><a name="transmit-2">transmit/2</a></h3>
 <div class="spec">
 <p><tt>transmit(Data, Options) -&gt; Result</tt>
-<ul class="definitions"><li><tt>Data = bitstring()</tt></li><li><tt>Options = <a href="#type-tx_opts">tx_opts()</a></tt></li><li><tt>Result = ok | {error, any()}</tt></li></ul></p>
+<ul class="definitions"><li><tt>Data = bitstring()</tt></li><li><tt>Options = <a href="#type-tx_opts">tx_opts()</a></tt></li><li><tt>Result = ok</tt></li></ul></p>
 <p> </p>
 </div><p><p>Performs a transmission with the specified options</p>
  
