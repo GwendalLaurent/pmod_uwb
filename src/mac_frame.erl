@@ -21,7 +21,7 @@ encode(FrameControl, MacHeader) ->
 % @returns a MAC frame ready to be transmitted in a bitstring (not including the CRC automatically added by the DW1000)
 % @end
 %-------------------------------------------------------------------------------
--spec encode(FrameControl :: #frame_control{}, MacHeader :: #mac_header{}, Payload :: bitstring()) -> bitstring().
+-spec encode(FrameControl :: frame_control(), MacHeader :: mac_header(), Payload :: bitstring()) -> bitstring().
 encode(FrameControl, MacHeader, Payload) ->
     Header = build_mac_header(FrameControl, MacHeader),
     <<Header/bitstring, Payload/bitstring>>.

@@ -18,14 +18,39 @@
 -module(gen_duty_cycle).
 
 -include("ieee802154.hrl").
+-include("gen_mac_layer.hrl").
 
--callback init(PhyModule::module()) -> State::term().
--callback on(State::term(), Callback::gen_mac_rx:input_callback_raw_frame(), Ranging::boolean()) -> {ok, State::term()} | {error, State::term(), Error::atom()}.
--callback off(State::term()) -> {ok, State::term()}.
+-callback init(PhyModule) -> State when
+      PhyModule :: module(),
+      State     :: term().
+-callback on(State, Callback, Ranging) -> Result when
+      State       :: term(),
+      Callback    :: gen_mac_rx:input_callback_raw_frame(),
+      Ranging     :: boolean(),
+      Result      :: {ok, State}
+                     | {error, State, Error},
+      Error       :: atom().
+-callback off(State) -> {ok, State} when
+      State :: term().
 % Add suspend and resume later
--callback tx(State::term(), Frame::bitstring(), CsmaParams::csma_params(), Ranging::ranging_tx()) -> {ok, State::term()} | {error, State::term(), Error::no_ack|frame_too_long|channel_access_failure|atom()}.
--callback rx(State::term()) -> {ok, State::term(), Frame::bitstring()} | {error, State::term(), Error::atom()}.
--callback terminate(State::term(), Reason::term()) -> ok.
+-callback tx(State, Frame, CsmaParams, Ranging) -> Result when
+      State :: term(),
+      Frame :: bitstring(),
+      CsmaParams  :: csma_params(),
+      Ranging     :: ranging_tx(),
+      Result      :: {ok, State, RangingInfo}
+                    | {error, State, Error},
+      RangingInfo :: ranging_informations(),
+      Error       :: no_ack|frame_too_long|channel_access_failure|atom().
+-callback rx(State) -> Result when
+      State  :: term(),
+      Result :: {ok, State, Frame}
+                | {error, State, Error},
+      Frame  :: bitstring(),
+      Error  :: atom().
+-callback terminate(State, Reason) -> ok when
+      State  :: term(),
+      Reason :: term().
 
 -export([start/2]).
 -export([turn_on/3]).
@@ -91,17 +116,21 @@ turn_off({Mod, Sub}) ->
 % <li> `channel_access_failure': the CSMA-CA algorithm failed</li>
 % @end
 -spec tx_request(State, Frame, CsmaParams, Ranging) -> Result when
-      State      :: state(),
-      Frame      :: bitstring(),
-      CsmaParams :: csma_params(),
-      Ranging    :: ranging_tx(),
-      State      :: state(),
-      Result     :: {ok, State} | {error, State, Error},
-      Error      :: atom().
+      State       :: state(),
+      Frame       :: bitstring(),
+      CsmaParams  :: csma_params(),
+      Ranging     :: ranging_tx(),
+      State       :: state(),
+      Result      :: {ok, State, RangingInfo}
+                     | {error, State, Error},
+      RangingInfo :: ranging_informations(),
+      Error       :: tx_error().
 tx_request({Mod, Sub}, Frame, CsmaParams, Ranging) ->
     case Mod:tx(Sub, Frame, CsmaParams, Ranging) of
-        {ok, Sub2} -> {ok, {Mod, Sub2}};
-        {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
+        {ok, Sub2, RangingInfo} ->
+            {ok, {Mod, Sub2}, RangingInfo};
+        {error, Sub2, Err} ->
+            {error, {Mod, Sub2}, Err}
     end.
 
 -spec rx_request(State) -> {ok, State, Frame} | {error, State, Error} when

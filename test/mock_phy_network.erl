@@ -35,6 +35,12 @@
 -export([handle_info/2]).
 -export([terminate/2]).
 
+%--- Records -------------------------------------------------------------------
+-record(phy_frame, {ranging = ?DISABLED  :: flag(),
+                    raw_mac_frame :: binary()}).
+
+%--- API -----------------------------------------------------------------------
+
 start_link(_Connector, Params) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Params, []).
 
@@ -154,21 +160,33 @@ init(#{network := NetworkNode}) ->
 
 handle_call({read, Reg}, _From, #{regs := Regs} = State) -> {reply, pmod_uwb_registers:get_value(Regs, Reg), State};
 handle_call({write, Reg, Value}, _From, #{regs := Regs} = State) -> {reply, ok, State#{regs => pmod_uwb_registers:update_reg(Regs, Reg, Value)}};
-handle_call({transmit, Frame, _}, _From, #{network := NetworkNode} = State) -> {reply, tx(NetworkNode, Frame), State};
+handle_call({transmit, Frame, Options}, _From, #{network := NetworkNode} = State) ->
+    #{regs := Regs} = State,
+    NewRegs = pmod_uwb_registers:update_reg(Regs, tx_fctrl, #{tr => Options#tx_opts.ranging}),
+    PhyFrame = #phy_frame{ranging = Options#tx_opts.ranging, raw_mac_frame = Frame},
+    {reply, tx(NetworkNode, PhyFrame), State#{regs => NewRegs}};
 handle_call(_Call, _From, State) -> io:format("Call not recognized"), {reply, ok, State}.
 
 handle_cast({reception, Ref, From}, State) -> {noreply, State#{waiting => {From, Ref}}}.
 
 handle_info({frame, Frame}, #{network := NetworkNode, waiting := {From, Ref}, regs := #{eui := #{eui := ExtAddress}, panadr := #{short_addr := ShortAddress}, sys_cfg := #{ffen := 1}}} = State) ->
-    case check_address(Frame, ShortAddress, ExtAddress) of
-        ok -> ack_reply(NetworkNode, Frame), 
-              From ! {Ref, {byte_size(Frame), Frame}};
-        _  -> From ! {Ref, affrej}
-    end,
-    {noreply, maps:remove(waiting, State)};
+    #{regs := Regs} = State,
+    io:format("~w~n", [Frame]),
+    RawFrame = Frame#phy_frame.raw_mac_frame,
+    NewState = case check_address(RawFrame, ShortAddress, ExtAddress) of
+                   ok -> ack_reply(NetworkNode, RawFrame),
+                         NewRegs = received(From, Ref, Regs, Frame),
+                         State#{regs := NewRegs};
+                   _  -> 
+                       From ! {Ref, affrej},
+                       State
+               end,
+    io:format("~w~n", [NewState]),
+    {noreply, maps:remove(waiting, NewState)};
 handle_info({frame, Frame}, #{waiting := {From, Ref}, regs := #{sys_cfg := #{ffen := 0}}} = State) ->
-    From ! {Ref, {byte_size(Frame), Frame}},
-    {noreply, maps:remove(waiting, State)};
+    #{regs := Regs} = State,
+    NewRegs = received(From, Ref, Regs, Frame),
+    {noreply, maps:remove(waiting, State#{regs := NewRegs})};
 handle_info({frame, _}, State) ->
     {noreply, State}.
 
@@ -193,6 +211,15 @@ ack_reply(NetworkNode, Frame) ->
     <<_:2, ACKREQ:1, _/bitstring>> = Frame,
     io:format("Ack req: ~w ~n ~w", [ACKREQ, Frame]),
     case Frame of
-        <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/bitstring>> -> io:format("Ack requested~n"), tx(NetworkNode, mac_frame:encode_ack(?DISABLED, Seqnum));
+        <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/bitstring>> ->
+            io:format("Ack requested~n"),
+            AckFrame = #phy_frame{raw_mac_frame = mac_frame:encode_ack(?DISABLED, Seqnum), ranging = ?DISABLED},
+            tx(NetworkNode, AckFrame);
         _ -> io:format("No Ack requested~n"), ok
     end.
+
+received(From, Ref, Regs, Frame) ->
+    UpdatedRegs = pmod_uwb_registers:update_reg(Regs, rx_finfo, #{rng => Frame#phy_frame.ranging}),
+    RawFrame = Frame#phy_frame.raw_mac_frame,
+    From ! {Ref, {byte_size(RawFrame), RawFrame}},
+    UpdatedRegs.

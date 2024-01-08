@@ -1,6 +1,7 @@
 -module(ieee802154).
 -behaviour(gen_server).
 
+%%% @headerfile "ieee802154.hrl"
 
 % API
 -export([start_link/1]).
@@ -8,8 +9,8 @@
 -export([stop_link/0]).
 -export([stop/0]).
 
--export([transmission/3]).
--export([transmission/4]).
+-export([transmission/1]).
+-export([transmission/2]).
 -export([reception/0]).
 
 -export([rx_on/0]).
@@ -73,27 +74,25 @@ stop_link() ->
 
 stop() -> gen_server:stop(?MODULE).
 
--spec transmission(FrameControl, FrameHeader, Payload) -> Result when
-      FrameControl :: frame_control(),
-      FrameHeader  :: mac_header(),
-      Payload      :: bitstring(),
-      Result       :: ok | {error, Error},
+%% @doc
+%% No timestamp because its value is the same as Ranging counter start
+-spec transmission(Frame) -> Result when
+      Frame        :: frame(),
+      Result       :: {ok, Ranging} | {error, Error},
+      Ranging      :: ranging_informations(),
       Error        :: atom().
-transmission(FrameControl, FrameHeader, Payload) ->
-    gen_server:call(?MODULE,
-                    {tx, FrameControl, FrameHeader, Payload, ?NON_RANGING},
-                    infinity).
+transmission(Frame) ->
+    transmission(Frame, ?NON_RANGING).
 
--spec transmission(FrameControl, FrameHeader, Payload, Ranging) -> Result when
-      FrameControl :: frame_control(),
-      FrameHeader  :: mac_header(),
-      Payload      :: bitstring(),
+-spec transmission(Frame, Ranging) -> Result when
+      Frame        :: frame(),
       Ranging      :: ranging_tx(),
-      Result       ::  ok | {error, Error},
+      Result       :: {ok, Ranging} | {error, Error},
+      Ranging      :: ranging_informations(),
       Error        :: atom().
-transmission(FrameControl, FrameHeader, Payload, Ranging) ->
+transmission(Frame, Ranging) ->
     gen_server:call(?MODULE,
-                    {tx, FrameControl, FrameHeader, Payload, Ranging},
+                    {tx, Frame, Ranging},
                     infinity).
 
 %% @doc Wait for the reception of a frame and returns its content
@@ -194,17 +193,19 @@ handle_call({rx_on, Ranging}, _From, State) ->
 handle_call({rx_off}, _From, #{mac_layer := MacState} = State) ->
     {ok, NewMacState} = gen_mac_layer:turn_off_rx(MacState),
     {reply, ok, State#{mac_layer => NewMacState}};
-handle_call({tx, FrameControl, FrameHeader, Payload, Ranging}, _From, #{mac_layer := MacState} = State) ->
-    case gen_mac_layer:tx(MacState, FrameControl, FrameHeader, Payload, Ranging) of
-        {ok, NewMacState} ->
-            {reply, ok, State#{mac_layer => NewMacState}};
+handle_call({tx, Frame, Ranging}, _From, State) ->
+    #{mac_layer := MacState} = State,
+    case gen_mac_layer:tx(MacState, Frame, Ranging) of
+        {ok, NewMacState, RangingInfo} ->
+            % Ret = {ok, RangingInfo},
+            {reply, {ok, RangingInfo}, State#{mac_layer => NewMacState}};
         {error, NewMacState, Error} ->
             {reply, {error, Error}, State#{mac_layer => NewMacState}}
     end;
 handle_call({rx}, _From, #{mac_layer := MacState} = State) ->
     case gen_mac_layer:rx(MacState) of
-        {ok, NewMacState, {FrameControl, FrameHeader, Payload}} ->
-            {reply, {ok, {FrameControl, FrameHeader, Payload}}, State#{mac_layer => NewMacState}};
+        {ok, NewMacState, Frame} ->
+            {reply, {ok, Frame}, State#{mac_layer => NewMacState}};
         {error, NewMacState, Error} ->
             {reply, {error, Error}, State#{mac_layer => NewMacState}}
     end;

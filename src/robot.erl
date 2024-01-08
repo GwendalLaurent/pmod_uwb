@@ -43,13 +43,13 @@ tx() ->
     pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     FrameControl = #frame_control{},
     MacHeader = #mac_header{},
-    ieee802154:transmission(FrameControl, MacHeader, <<"Test">>).
+    ieee802154:transmission({FrameControl, MacHeader, <<"Test">>}).
 
 tx_ranging() ->
     pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     FrameControl = #frame_control{},
     MacHeader = #mac_header{},
-    ieee802154:transmission(FrameControl, MacHeader, <<"Test">>, ?ALL_RANGING).
+    ieee802154:transmission({FrameControl, MacHeader, <<"Test">>}, ?ALL_RANGING).
 
 
 -spec rx_callback(Frame, LinkQuality, Security, Ranging) -> ok when
@@ -74,8 +74,8 @@ tx(0, Total, Success, Error) -> {Success, Error, Total};
 tx(N, Total, Success, Error) ->
     % io:format("~w~n", [N]),
     Seqnum = Total rem 512,
-    case ieee802154:transmission(#frame_control{pan_id_compr = ?ENABLED, ack_req = ?ENABLED}, #mac_header{seqnum = Seqnum, dest_pan = ?PANID, dest_addr = ?RECEIVER_ADDR, src_addr = ?SENDER_ADDR}, ?BENCHMARK_DATA) of
-        ok -> tx(N-1, Total+1, Success+1, Error);
+    case ieee802154:transmission({#frame_control{pan_id_compr = ?ENABLED, ack_req = ?ENABLED}, #mac_header{seqnum = Seqnum, dest_pan = ?PANID, dest_addr = ?RECEIVER_ADDR, src_addr = ?SENDER_ADDR}, ?BENCHMARK_DATA}) of
+        {ok, _} -> tx(N-1, Total+1, Success+1, Error);
         _ -> tx(N-1, Total+1, Success, Error+1)
     end.
 

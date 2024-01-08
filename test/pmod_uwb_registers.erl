@@ -52,6 +52,16 @@ default() ->
                     std_noise => 0,
                     cir_pwr => 1,
                     pp_ampl3 => 0},
+      rx_ttcki => #{rxttcki => 0}, % 0x13
+      rx_ttcko => #{rmspdel => 0, % 0x14
+                    rxtofs => 0,
+                    rcphase => 0},
+      rx_time => #{rx_stamp => 0, % 0x15
+                   fp_index => 0,
+                   fp_ampl1 => 0,
+                   rx_rawst => 0},
+      tx_time => #{tx_stamp => 0, % 0x17
+                   tx_rawst => 0},
       rx_sniff => #{sniff_offt => 0, sniff_ont => 0}, % 0x1D
       agc_ctrl => #{agc_ctrl1 => #{dis_am => 1},
                     agc_tune1 => 16#8870,

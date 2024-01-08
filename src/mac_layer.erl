@@ -10,7 +10,7 @@
 
 %%% gen_mac_layer callbacks
 -export([init/1]).
--export([tx/5]).
+-export([tx/3]).
 -export([rx/1]).
 -export([rx_on/3]).
 -export([rx_off/1]).
@@ -18,9 +18,20 @@
 -export([set/3]).
 -export([terminate/2]).
 
+%--- Records -------------------------------------------------------------------
+
 %--- Types ---------------------------------------------------------------------
--type csma_attributes() :: #{cw0 := cw0(), mac_max_BE := mac_max_BE(), mac_min_BE := mac_max_BE(), mac_max_csma_backoffs := mac_max_csma_backoff()}.
--type state() :: #{phy_layer := module(), duty_cycle := gen_duty_cycle:state(), retries := integer(), attributes := csma_attributes()}.
+-type pib_attributes() :: #{cw0 := cw0(),
+                            mac_max_BE := mac_max_BE(),
+                            mac_min_BE := mac_max_BE(),
+                            mac_max_csma_backoffs := mac_max_csma_backoff(),
+                            _ => _}.
+
+-type state() :: #{phy_layer := module(),
+                   duty_cycle := gen_duty_cycle:state(),
+                   attributes := pib_attributes(),
+                   ranging := pmod_uwb:flag(),
+                   _ => _}.
 
 %--- mac_layer_behaviour callback functions ------------------------------------
 
@@ -38,31 +49,35 @@
       State  :: state().
 init(#{phy_layer := PhyMod, duty_cycle := DutyCycleMod}) ->
     PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
-    PhyMod:write(sys_cfg, #{ffab => 1, ffad => 1, ffaa => 1, ffam => 1, ffen => 1, autoack => 1, rxwtoe => 1}),
+    PhyMod:write(sys_cfg, #{ffab => 1,
+                            ffad => 1,
+                            ffaa => 1,
+                            ffam => 1,
+                            ffen => 1,
+                            autoack => 1,
+                            rxwtoe => 1}),
     DutyCycleState = gen_duty_cycle:start(DutyCycleMod, PhyMod),
     #{phy_layer => PhyMod,
       duty_cycle => DutyCycleState,
-      retries => 0,
-      attributes => default_attribute_values()}.
+      attributes => default_attribute_values(),
+      ranging => ?DISABLED}.
 
 % @doc transmits a frame using the physical layer
 % @end
--spec tx(State, FrameControl, MacHeader, Payload, Ranging) -> Result when
-      State :: map(),
-      FrameControl :: frame_control(),
-      MacHeader :: mac_header(),
-      Payload :: binary(),
-      Ranging :: ranging_tx(),
-      Result :: {ok, State} | {error, State, Error},
-      Error :: tx_error().
-tx(State, FrameControl, MacHeader, Payload, Ranging) ->
-    DCState = maps:get(duty_cycle, State),
-    Attributes = maps:get(attributes, State),
+-spec tx(State, Frame, Ranging) -> Result when
+      State       :: state(),
+      Frame       :: frame(),
+      Ranging     :: ranging_tx(),
+      Result      :: {ok, State, RangingInfo} | {error, State, tx_error()},
+      RangingInfo :: ranging_informations().
+tx(State, Frame, Ranging) ->
+    #{duty_cycle := DCState, attributes := Attributes} = State,
     CsmaParams = get_csma_params(Attributes),
+    {FrameControl, MacHeader, Payload} = Frame,
     EncFrame = mac_frame:encode(FrameControl, MacHeader, Payload),
     case gen_duty_cycle:tx_request(DCState, EncFrame, CsmaParams, Ranging) of
-        {ok, NewDutyCycleState} ->
-            {ok, State#{duty_cycle => NewDutyCycleState}};
+        {ok, NewDutyCycleState, RangingInfo} ->
+            {ok, State#{duty_cycle => NewDutyCycleState}, RangingInfo};
         {error, NewDutyCycleState, Error} ->
             {error, State#{duty_cycle => NewDutyCycleState}, Error}
     end.
@@ -77,8 +92,11 @@ tx(State, FrameControl, MacHeader, Payload, Ranging) ->
       Error :: atom().
 rx(#{duty_cycle := DutyCycleState} = State) ->
     case gen_duty_cycle:rx_request(DutyCycleState) of
-        {ok, NewDutyCycleState, Frame} -> {ok, State#{duty_cycle => NewDutyCycleState}, mac_frame:decode(Frame)};
-        {error, NewDutyCycleState, Error} -> {error, State#{duty_cycle => NewDutyCycleState}, Error}
+        {ok, NewDutyCycleState, Frame} ->
+            DecFrame = mac_frame:decode(Frame),
+            {ok, State#{duty_cycle => NewDutyCycleState}, DecFrame};
+        {error, NewDutyCycleState, Error} ->
+            {error, State#{duty_cycle => NewDutyCycleState}, Error}
     end.
 
 % @doc Turns on the continuous reception
@@ -89,7 +107,7 @@ rx(#{duty_cycle := DutyCycleState} = State) ->
 %
 % @end
 -spec rx_on(State, Callback, RangingFlag) -> {ok, State} | {error, State, Error} when
-      State :: map(),
+      State :: state(),
       Callback :: input_callback(),
       RangingFlag :: pmod_uwb:flag(),
       Error       :: atom().
@@ -103,11 +121,16 @@ rx_on(#{duty_cycle := DutyCycleState} = State, Callback, RangingFlag) ->
 
 % @doc Turns off the continuous reception
 % @end
+-spec rx_off(State) -> {ok, State} when
+    State :: state().
 rx_off(#{duty_cycle := DutyCycleState} = State) ->
     NewDutyCycleState = gen_duty_cycle:turn_off(DutyCycleState),
     {ok, State#{duty_cycle => NewDutyCycleState}}.
 
--spec get(State::term(), Attribute::gen_mac_layer:pibAttribute()) -> {ok, State::term(), Value::term()} | {error, State::term(), unsupported_attribute}.
+-spec get(State, Attribute) -> {ok, State, Value} | {error, State, unsupported_attribute} when
+    State :: state(),
+    Attribute :: gen_mac_layer:pib_attributes(),
+    Value :: term().
 get(#{phy_layer := PhyMod} = State, mac_extended_address) ->
     #{eui := EUI} = PhyMod:read(eui),
     {ok, State, EUI};
@@ -122,7 +145,11 @@ get(#{attributes := Attributes} = State, Attribute) when is_map_key(Attribute, A
 get(State, _) ->
     {error, State, unsupported_attribute}.
 
--spec set(State::term(), Attribute::gen_mac_layer:pibAttribute(), Value::term()) -> {ok, State::term()} | {error, State::term(), gen_mac_layer:pibSetError()}.
+-spec set(State, Attribute, Value) -> {ok, State} | {error, State, Error} when
+    State     :: state(),
+    Attribute :: gen_mac_layer:pibAttribute(),
+    Value     :: term(),
+    Error     :: gen_mac_layer:pibSetError().
 set(#{phy_layer := PhyMod} = State, mac_extended_address, Value) ->
     PhyMod:write(eui, #{eui => Value}), % TODO check the range/type/value given
     {ok, State};
@@ -144,6 +171,11 @@ terminate(#{duty_cycle := DutyCycleState}, Reason) ->
 
 %--- Internal ------------------------------------------------------------------
 
+-spec default_attribute_values() -> Attributes when
+      Attributes :: #{cw0 := 2,
+                      mac_max_BE := 5,
+                      mac_max_csma_backoffs := 4,
+                      mac_min_BE := 3}.
 default_attribute_values() ->
     #{
       cw0 => 2, % cf. p.22 standard
@@ -153,10 +185,7 @@ default_attribute_values() ->
      }.
 
 -spec get_csma_params(Attributes) -> CsmaParams when
-      Attributes :: #{mac_min_BE := _,
-                      mac_max_BE := _,
-                      mac_max_csma_backoff := _,
-                      cw0 := _},
+      Attributes :: pib_attributes(),
       CsmaParams :: csma_params().
 get_csma_params(Attributes) ->
     #csma_params{mac_min_BE = maps:get(mac_min_BE, Attributes),

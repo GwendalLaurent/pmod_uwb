@@ -438,19 +438,19 @@ init(Slot) ->
     {ok, #{bus => Bus}}.
 
 %% @private
-handle_call({read, RegFileID}, _From, #{bus := Bus} = State)               -> 
+handle_call({read, RegFileID}, _From, #{bus := Bus} = State)               ->
     {reply, read_reg(Bus, RegFileID), State};
-handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State)       -> 
+handle_call({write, RegFileID, Value}, _From, #{bus := Bus} = State)       ->
     {reply, write_reg(Bus, RegFileID, Value), State};
-handle_call({write_tx, Value}, _From, #{bus := Bus} = State)               -> 
+handle_call({write_tx, Value}, _From, #{bus := Bus} = State)               ->
     {reply, write_tx_data(Bus, Value), State};
-handle_call({transmit, Data, Options}, _From, #{bus := Bus} = State)       -> 
+handle_call({transmit, Data, Options}, _From, #{bus := Bus} = State)       ->
     {reply, tx(Bus, Data, Options), State};
-handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) -> 
+handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) ->
     {reply, delayed_tx(Bus, Data, Delay), State};
-handle_call({get_rx_data}, _From, #{bus := Bus} = State)                   -> 
+handle_call({get_rx_data}, _From, #{bus := Bus} = State)                   ->
     {reply, get_rx_data(Bus), State};
-handle_call(Request, _From, _State)                                        -> 
+handle_call(Request, _From, _State)                                        ->
     error({unknown_call, Request}).
 
 %% @private

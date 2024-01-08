@@ -20,14 +20,14 @@
                           input_callback = fun(_, _, _, _) -> ok end :: input_callback()}).
 
 
--record(ranging_informations, {ranging_received = ?NO_RANGING_REQUESTED :: ranging_received(),
+-record(ranging_informations, {ranging_received = ?NO_RANGING_REQUESTED :: ranging_received() | boolean(),
                                ranging_counter_start = 0                :: integer(),
                                ranging_counter_stop = 0                 :: integer(),
                                ranging_tracking_interval = 0            :: integer(),
                                ranging_offset = 0                       :: integer(),
                                ranging_FOM = <<16#00:8>>                :: bitstring()}).
 
--opaque ranging_informations() :: #ranging_informations{}.
+-type ranging_informations() :: #ranging_informations{}.
 
 % For now security isn't enabled
 -record(security, {security_level = 0       :: integer(),
@@ -37,9 +37,9 @@
 -opaque security() :: #security{}.
 
 -record(csma_params, {mac_min_BE           :: mac_min_BE(),
-                          mac_max_BE           :: mac_max_BE(),
-                          mac_max_csma_backoff :: mac_max_csma_backoff(),
-                          cw0                  :: cw0()}).
+                      mac_max_BE           :: mac_max_BE(),
+                      mac_max_csma_backoff :: mac_max_csma_backoff(),
+                      cw0                  :: cw0()}).
 
 %--- IEEE 802.15.4 parameter types
 -export_type([ieee_parameters/0, ranging_informations/0, security/0, input_callback/0, ranging_tx/0]).
@@ -64,4 +64,3 @@
 -type ieee_parameters() :: #ieee_parameters{}.
 
 -type csma_params() :: #csma_params{}.
-

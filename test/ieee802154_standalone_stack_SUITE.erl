@@ -26,11 +26,11 @@ end_per_testcase(_, _Config) ->
 
 stack_test(_Config) -> 
     ieee802154:rx_on(),
-    ieee802154:transmission(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
-    ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>),
+    ieee802154:transmission({#frame_control{}, #mac_header{}, <<"Simple Frame">>}),
+    ieee802154:transmission({#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>}),
     ieee802154:rx_off(),
-    ieee802154:transmission(#frame_control{}, #mac_header{}, <<"Simple Frame">>),
-    ieee802154:transmission(#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>).
+    ieee802154:transmission({#frame_control{}, #mac_header{}, <<"Simple Frame">>}),
+    ieee802154:transmission({#frame_control{ack_req = ?ENABLED}, #mac_header{}, <<"AR Frame">>}).
 
 stack_read_write_test(_Config) ->
     ieee802154:get_mac_extended_address(),

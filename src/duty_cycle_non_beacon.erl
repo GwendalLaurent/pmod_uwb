@@ -77,16 +77,19 @@ off(#state{phy_layer = PhyMod, loop_pid = LoopPid} = State) ->
     {ok, State#state{loop_pid = undefined}}.
 
 -spec tx(State, Frame, CsmaParams, Ranging) -> Result when
-    State              :: state(),
-    Frame              :: binary(),
-    CsmaParams         :: csma_params(),
-    Ranging            :: ranging_tx(),
-    Result             :: {ok, State::term()} | {error, State::term(), Error},
-    Error              :: no_ack|frame_too_long|channel_access_failure|atom().
+    State       :: state(),
+    Frame       :: binary(),
+    CsmaParams  :: csma_params(),
+    Ranging     :: ranging_tx(),
+    Result      :: {ok, State, RangingInfo}
+                   | {error, State, Error},
+    RangingInfo :: ranging_informations(),
+    Error       :: no_ack|frame_too_long|channel_access_failure|atom().
 tx(#state{loop_pid = undefined} = State, Frame, CsmaParams, Ranging) ->
     case tx_(State, Frame, CsmaParams, Ranging) of
         {ok, NewMacTxState} ->
-            {ok, State#state{mac_tx_state = NewMacTxState}};
+            RangingInfo = tx_ranging_infos(Ranging, State),
+            {ok, State#state{mac_tx_state = NewMacTxState}, RangingInfo};
         {error, NewMacTxState, Error} ->
             {error, State#state{mac_tx_state = NewMacTxState}, Error}
     end;
@@ -96,9 +99,11 @@ tx(State, Frame, CsmaParams, Ranging) ->
     NewLoopPid = resume_rx_loop(State),
     case TxStatus of
         {ok, NewMacTxState} ->
+            RangingInfo = tx_ranging_infos(Ranging, State),
             {ok,
              State#state{loop_pid = NewLoopPid,
-                         mac_tx_state = NewMacTxState}};
+                         mac_tx_state = NewMacTxState},
+            RangingInfo};
         {error, NewMacTxState, Error} ->
             {error, State#state{loop_pid = NewLoopPid,
                                 mac_tx_state = NewMacTxState},
@@ -156,7 +161,7 @@ rx_loop(PhyMod, Callback, Ranging) ->
     case rx_(PhyMod) of
         {ok, Frame} ->
             RNG = PhyMod:rx_ranging_info(),
-            RangingInfo = ranging_infos(Ranging, RNG, PhyMod),
+            RangingInfo = rx_ranging_infos(Ranging, RNG, PhyMod),
             Callback(Frame,
                      snr(PhyMod),
                      PhyMod:prf_value(),
@@ -280,13 +285,22 @@ snr(PhyMod) ->
     RSL = PhyMod:signal_power(),
     RSL + Delta.
 
-ranging_infos(?DISABLED, ?ENABLED, _) ->
+%% @doc
+%% @param DeviceRanging: Ranging value passed in the LME-RX-ENABLE
+%% @param RxRNG: RNG bit of the received frame
+%% @end
+-spec rx_ranging_infos(DeviceRanging, RxRNG, PhyMod) -> Result when
+      DeviceRanging :: flag(),
+      RxRNG         :: flag(),
+      PhyMod        :: module(),
+      Result        :: ranging_informations().
+rx_ranging_infos(?DISABLED, ?ENABLED, _) ->
     #ranging_informations{
        ranging_received = ?RANGING_REQUESTED_BUT_NOT_SUPPORTED
       };
-ranging_infos(_, ?DISABLED, _) ->
+rx_ranging_infos(_, ?DISABLED, _) ->
     #ranging_informations{ranging_received = ?NO_RANGING_REQUESTED};
-ranging_infos(?ENABLED, ?ENABLED, PhyMod) ->
+rx_ranging_infos(?ENABLED, ?ENABLED, PhyMod) ->
     #{rx_stamp := RxStamp} = PhyMod:read(rx_time),
     #{tx_stamp := TxStamp} = PhyMod:read(tx_time),
     #{rxtofs := RXTOFS} = PhyMod:read(rx_ttcko),
@@ -299,3 +313,22 @@ ranging_infos(?ENABLED, ?ENABLED, PhyMod) ->
        ranging_offset = RXTOFS,
        ranging_FOM = <<0:8>>
       }.
+
+tx_ranging_infos(?NON_RANGING, _) ->
+    #ranging_informations{ranging_received = false};
+tx_ranging_infos(?ENABLED, State) ->
+    #state{phy_layer = PhyMod} = State,
+    #{rx_stamp := RxStamp} = PhyMod:read(rx_time),
+    #{tx_stamp := TxStamp} = PhyMod:read(tx_time),
+    #{rxtofs := RXTOFS} = PhyMod:read(rx_ttcko),
+    #{rxttcki := RXTTCKI} = PhyMod:read(rx_ttcki),
+    #ranging_informations{
+       ranging_received = true,
+       ranging_counter_start = TxStamp,
+       ranging_counter_stop = RxStamp,
+       ranging_tracking_interval = RXTTCKI,
+       ranging_offset = RXTOFS,
+       ranging_FOM = <<0:8>>
+      }.
+
+

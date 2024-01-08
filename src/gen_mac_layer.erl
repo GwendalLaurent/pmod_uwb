@@ -5,7 +5,7 @@
 
 % API
 -export([start/2]).
--export([tx/5]).
+-export([tx/3]).
 -export([rx/1]).
 -export([turn_on_rx/3]).
 -export([turn_off_rx/1]).
@@ -22,15 +22,14 @@
 -callback init(Params) -> State when
       Params :: map(),
       State  :: term().
--callback tx(State, FrameControl, MacHeader, Payload, Ranging) -> Result when
-      State :: term(),
-      FrameControl :: frame_control(),
-      MacHeader    :: mac_header(),
-      Payload      :: binary(),
-      Ranging      :: ranging_tx(),
-      Result       :: {ok, State}
-                      | {error, State, Error},
-      Error        :: tx_error().
+-callback tx(State, Frame, Ranging) -> Result when
+      State       :: term(),
+      Frame       :: frame(),
+      Ranging     :: ranging_tx(),
+      Result      :: {ok, State, RangingInfo}
+                     | {error, State, Error},
+      RangingInfo :: ranging_informations(),
+      Error       :: tx_error().
 -callback rx(State) -> Result when
       State  :: term(),
       Result :: {ok, State, Frame}
@@ -82,21 +81,22 @@ start(Module, Params) ->
 
 %% @doc Transmission request to the MAC layer of a MAC frame
 %% @end
--spec tx(State, FrameControl, MacHeader, Payload, Ranging) -> Result when
+-spec tx(State, Frame, Ranging) -> Result when
       State :: state(),
-      FrameControl :: frame_control(),
-      MacHeader :: mac_header(),
-      Payload :: bitstring(),
+      Frame :: frame(),
       Ranging :: ranging_tx(),
-      Result  :: {ok, State}
+      Result  :: {ok, State, RangingInfo}
                  | {error, State, Error},
+      RangingInfo :: ranging_informations(),
       Error :: tx_error().
-tx(State, #frame_control{dest_addr_mode=?NONE, src_addr_mode=?NONE}, _, _, _) ->
+tx(State, {#frame_control{dest_addr_mode=?NONE, src_addr_mode=?NONE}, _, _}, _) ->
     {error, State, invalid_address};
-tx({Mod, Sub}, FrameControl, MacHeader, Payload, Ranging) ->
-    case Mod:tx(Sub, FrameControl, MacHeader, Payload, Ranging) of
-        {ok, Sub2} -> {ok, {Mod, Sub2}};
-        {error, Sub2, Err} -> {error, {Mod, Sub2}, Err}
+tx({Mod, Sub}, Frame, Ranging) ->
+    case Mod:tx(Sub, Frame, Ranging) of
+        {ok, Sub2, RangingInfo} ->
+            {ok, {Mod, Sub2}, RangingInfo};
+        {error, Sub2, Err} ->
+            {error, {Mod, Sub2}, Err}
     end.
 
 %% @doc Transmission request to the MAC layer of a MAC frame

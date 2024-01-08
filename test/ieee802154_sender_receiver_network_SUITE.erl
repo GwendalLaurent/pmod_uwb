@@ -122,7 +122,7 @@ sender(Config) ->
     ct:sleep(100),
     {_, Node} = ?config(sender, Config),
     {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
-    ok = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]).
+    {ok, _} = erpc:call(Node, ieee802154, transmission, [{FrameControl, MacHeader, Payload}]).
 
 receiver(Config) ->
     {_, Node} = ?config(receiver, Config),
@@ -150,7 +150,7 @@ sender_no_ack(Config) ->
     ct:sleep(100),
     {_, Node} = ?config(sender_no_ack, Config),
     {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
-    {error, no_ack} = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]).
+    {error, no_ack} = erpc:call(Node, ieee802154, transmission, [{FrameControl, MacHeader, Payload}]).
 
 %--- TX RX loop reply group
 sender_rx_loop_reply(Config) ->
@@ -159,7 +159,7 @@ sender_rx_loop_reply(Config) ->
     {FrameControl, MacHeader, Payload} = get_expected_frame(Config),
     Reply = ?config(reply, Config),
     ok = erpc:call(Node, ieee802154, rx_on, []),
-    ok = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]),
+    {ok, _} = erpc:call(Node, ieee802154, transmission, [{FrameControl, MacHeader, Payload}]),
     ct:sleep(200),
     ok = erpc:call(Node, ieee802154, rx_off, []),
     [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]), % When ack is received, rx_loop and callbacks are off => doesn't count in the simulation as a received frame
@@ -173,14 +173,14 @@ receiver_rx_loop_reply(Config) ->
     ct:sleep(200),
     [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]),
     [{_, [ExpectedFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]),
-    ok = erpc:call(Node, ieee802154, transmission, [FrameControl, MacHeader, Payload]),
+    {ok, _} = erpc:call(Node, ieee802154, transmission, [{FrameControl, MacHeader, Payload}]),
     ok = erpc:call(Node, ieee802154, rx_off, []).
 
 %--- unslotted CSMA-CA test case group
 sender_busy_medium(Config) -> 
     {_, Node} = ?config(sender_busy_medium, Config),
     %timer:sleep(100),
-    Frame = [#frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED}, #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, <<"Test - this frame shouldn't be transmitted">>],
+    Frame = [{#frame_control{src_addr_mode = ?EXTENDED, dest_addr_mode = ?EXTENDED}, #mac_header{src_addr = <<16#CAFEDECA00000001:64>>, dest_addr = <<16#CAFEDECA00000002:64>>}, <<"Test - this frame shouldn't be transmitted">>}],
     {error, channel_access_failure} = erpc:call(Node, ieee802154, transmission, Frame).
 
 jammer(Config) -> 
