@@ -354,10 +354,10 @@ signal_power() ->
             64 -> 121.74
         end, % Constant. For PRF of 16 MHz = 113.77, for PRF of 64MHz = 121.74
     N = preamble_acc(), % Preamble accumulation count value (RXPACC but might be ajusted)
-    io:format("C: ~w~n A:~w~n N:~w~n", [C, A, N]),
+    % io:format("C: ~w~n A:~w~n N:~w~n", [C, A, N]),
     Res = 10 * math:log10((C* math:pow(2, 17))/math:pow(N, 2)) - A,
-    io:format("Estimated signal power: ~p dBm~n", [Res]),
-    io:format("Std noise: ~w~n", [pmod_uwb:read(rx_fqual)]),
+    % io:format("Estimated signal power: ~p dBm~n", [Res]),
+    % io:format("Std noise: ~w~n", [pmod_uwb:read(rx_fqual)]),
     Res.
 
 preamble_acc() ->
@@ -895,9 +895,12 @@ reg(decode, rx_fqual, Resp) ->
     #{
         cir_pwr => CIR_PWR, pp_ampl3 => PP_AMPL3, fp_ampl2 => FP_AMPL2, std_noise => STD_NOISE
     };
-reg(decode, rx_ttcki, Resp) -> 
+reg(decode, rx_ttcki, Resp) ->
+    <<
+      RXTTCKI:32
+    >> = reverse(Resp),
     #{
-        rxttcki => reverse(Resp)
+        rxttcki => RXTTCKI 
     };
 reg(decode, rx_ttcko, Resp) ->
     <<

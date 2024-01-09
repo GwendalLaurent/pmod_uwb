@@ -47,7 +47,7 @@ tx() ->
 
 tx_ranging() ->
     pmod_uwb:set_preamble_timeout(?CCA_DURATION),
-    FrameControl = #frame_control{},
+    FrameControl = #frame_control{ack_req = ?ENABLED},
     MacHeader = #mac_header{},
     ieee802154:transmission({FrameControl, MacHeader, <<"Test">>}, ?ALL_RANGING).
 
@@ -62,10 +62,34 @@ rx_callback({_FrameControl, _MacHeader, _Payload}, LQI, Security, Ranging) ->
     io:format("Link quality: ~p ~n", [LQI]),
     io:format("Security: ~w~n", [Security]),
     io:format("Ranging: ~w~n", [Ranging]),
-    io:format("Called twice ?~n"),
     io:format("-------------------------~n").
     % io:format("Received frame with seqnum: ~w - Payload: ~w ~n",
     %           [_MacHeader#mac_header.seqnum, _Payload]).
+
+rx_ranging_callback(Frame, _LQI, _Security, Ranging) ->
+    case Ranging#ranging_informations.ranging_received of
+        ?RANGING_ACTIVE -> transmit_resp(Frame, Ranging); % Responder receives RNG req
+        _ -> record_infos(Frame) % Inititator receive resp. report
+    end.
+
+transmit_resp({FrameControl, MacHeader, <<"RANGING">>}, AckRangingInfos) ->
+    Seqnum = rand:uniform(255),
+    RespFC = #frame_control{dest_addr_mode = ?SHORT_ADDR,
+                            src_addr_mode = ?SHORT_ADDR},
+    RespMH = #mac_header{seqnum = Seqnum,
+                         dest_addr = MacHeader#mac_header.src_addr,
+                         src_pan = MacHeader#mac_header.dest_pan,
+                         src_addr = MacHeader#mac_header.src_addr,
+                         dest_pan = MacHeader#mac_header.dest_pan},
+    Id = MacHeader#mac_header.seqnum,
+    RangingStart = AckRangingInfos#ranging_informations.ranging_counter_start,
+    RangingStop = AckRangingInfos#ranging_informations.ranging_counter_stop,
+    Payload = <<"RANGING-RESP", Id:8, RangingStart:40, RangingStop:40>>,
+    ieee802154:transmission({RespFC, RespMH, Payload}).
+
+record_infos({_, _, <<"RANGING-RESP", Id:8, RangingStart:40, RangingStop:40>>}) ->
+    twr:responder_data(Id, RangingStart, RangingStop);
+record_infos(_) -> ok.
 
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().
@@ -99,7 +123,7 @@ tx_benchmark() ->
     NbrFrames = 100,
     % NbrFrames = 1000,
     Start = os:timestamp(),
-    {Success, Error, Total} = tx(NbrFrames, 0, 0, 0), 
+    {Success, Error, Total} = tx(NbrFrames, 0, 0, 0),
     End = os:timestamp(),
     Time = timer:now_diff(End, Start)/1000000,
     io:format("------------------- Report -------------------~n"),
@@ -125,7 +149,13 @@ rx_ranging() ->
 start(_Type, _Args) ->
     {ok, Supervisor} = robot_sup:start_link(),
     grisp:add_device(spi2, pmod_uwb),
-    ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer, input_callback = fun rx_callback/4}),
+    %ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer,
+    %                                      input_callback = fun rx_callback/4}),
+    ieee802154:start_link(
+      #ieee_parameters{mac_layer = mac_layer,
+                       input_callback = fun rx_ranging_callback/4}
+     ),
+    twr:start_link(),
     % pmod_uwb:write(rx_fwto, #{rxfwto => 16#FFFF}),
     % pmod_uwb:write(sys_cfg, #{rxwtoe => 2#1}),
     % ieee802154:rx_on(),
