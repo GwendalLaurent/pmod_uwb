@@ -41,7 +41,7 @@
       Result      :: {ok, State, RangingInfo}
                     | {error, State, Error},
       RangingInfo :: ranging_informations(),
-      Error       :: no_ack|frame_too_long|channel_access_failure|atom().
+      Error       :: tx_error().
 -callback rx(State) -> Result when
       State  :: term(),
       Result :: {ok, State, Frame}

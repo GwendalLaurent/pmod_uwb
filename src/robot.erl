@@ -25,6 +25,8 @@
 -export([start/2]).
 -export([stop/1]).
 
+-compile([{nowarn_unused_function, [{rx_callback, 4}]}]).
+
 -define(JAMMING_DATA, <<"JAMMING">>).
 -define(DATALENGTH, byte_size(?JAMMING_DATA)).
 
@@ -68,13 +70,20 @@ rx_callback({_FrameControl, _MacHeader, _Payload}, LQI, Security, Ranging) ->
     % io:format("Received frame with seqnum: ~w - Payload: ~w ~n",
     %           [_MacHeader#mac_header.seqnum, _Payload]).
 
+-spec rx_ranging_callback(Frame, LinkQuality, Security, Ranging) -> ok when
+      Frame       :: frame(),
+      LinkQuality :: integer(),
+      Security    :: ieee802154:security(),
+      Ranging     :: ieee802154:ranging_informations().
 rx_ranging_callback(Frame, _LQI, _Security, Ranging) ->
     case Ranging#ranging_informations.ranging_received of
         ?RANGING_ACTIVE -> transmit_resp(Frame, Ranging); % Responder receives RNG req
         _ -> record_infos(Frame) % Inititator receive resp. report
     end.
 
-transmit_resp({FrameControl, MacHeader, <<"RANGING">>}, AckRangingInfos) ->
+-spec transmit_resp(frame(), ranging_informations()) -> Result when
+      Result :: {ok, ranging_informations()} | {error, atom()}.
+transmit_resp({_, MacHeader, <<"RANGING">>}, AckRangingInfos) ->
     Seqnum = rand:uniform(255),
     RespFC = #frame_control{dest_addr_mode = ?SHORT_ADDR,
                             src_addr_mode = ?SHORT_ADDR},

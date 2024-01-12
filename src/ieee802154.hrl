@@ -34,7 +34,7 @@
                    key_id_mode = 0          :: integer(),
                    key_source = <<16#00:8>> :: bitstring()}).
 
--opaque security() :: #security{}.
+-type security() :: #security{}.
 
 -record(csma_params, {mac_min_BE           :: mac_min_BE(),
                       mac_max_BE           :: mac_max_BE(),

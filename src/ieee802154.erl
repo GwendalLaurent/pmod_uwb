@@ -37,6 +37,7 @@
 
 -include("ieee802154.hrl").
 -include("mac_frame.hrl").
+-include("gen_mac_layer.hrl").
 
 %--- Types ---------------------------------------------------------------------
 -type state() :: #{mac_layer := gen_mac_layer:state(),
@@ -66,6 +67,8 @@
 start_link(Params) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Params, []).
 
+-spec start(Params) -> {ok, pid()} | {error, any()} when
+      Params :: ieee_parameters().
 start(Params) ->
     gen_server:start({local, ?MODULE}, ?MODULE, Params, []).
 
@@ -75,7 +78,8 @@ stop_link() ->
 stop() -> gen_server:stop(?MODULE).
 
 %% @doc
-%% No timestamp because its value is the same as Ranging counter start
+%% @equiv transmission(Frame, ?NON_RANGING)
+%% @end
 -spec transmission(Frame) -> Result when
       Frame        :: frame(),
       Result       :: {ok, Ranging} | {error, Error},
@@ -84,33 +88,37 @@ stop() -> gen_server:stop(?MODULE).
 transmission(Frame) ->
     transmission(Frame, ?NON_RANGING).
 
+%% @doc Performs a transmission on the defined IEEE 802.15.4 stack
+%% No timestamp because its value is the same as Ranging counter start
+%% @end
 -spec transmission(Frame, Ranging) -> Result when
       Frame        :: frame(),
       Ranging      :: ranging_tx(),
       Result       :: {ok, Ranging} | {error, Error},
       Ranging      :: ranging_informations(),
-      Error        :: atom().
+      Error        :: tx_error().
 transmission(Frame, Ranging) ->
     gen_server:call(?MODULE,
                     {tx, Frame, Ranging},
                     infinity).
 
-%% @doc Wait for the reception of a frame and returns its content
+%% @doc Performs a reception on the IEEE 802.15.4 stack
 %% @end
--spec reception() -> {FrameControl, FrameHeader, Payload} when
-      FrameControl :: frame_control(),
-      FrameHeader  :: mac_header(),
-      Payload      :: binary().
+-spec reception() -> Result when
+      Result :: {ok, frame()} | {error, atom()}.
 reception() ->
     gen_server:call(?MODULE, {rx}, infinity).
 
-%% @doc Turns on the continuous reception
+%% @doc
+%% @equiv rx_on(?DISABLED)
 %% @end
 -spec rx_on() -> Result when
       Result :: ok | {error, atom()}.
 rx_on() ->
     gen_server:call(?MODULE, {rx_on, ?DISABLED}).
 
+%% @doc Turns on the continuous reception
+%% @end
 -spec rx_on(Ranging) -> ok when
       Ranging :: ?DISABLED | ?ENABLED.
 rx_on(Ranging) ->

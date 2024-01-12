@@ -84,7 +84,7 @@ off(#state{phy_layer = PhyMod, loop_pid = LoopPid} = State) ->
     Result      :: {ok, State, RangingInfo}
                    | {error, State, Error},
     RangingInfo :: ranging_informations(),
-    Error       :: no_ack|frame_too_long|channel_access_failure|atom().
+    Error       :: tx_error().
 tx(#state{loop_pid = undefined} = State, Frame, CsmaParams, Ranging) ->
     case tx_(State, Frame, CsmaParams, Ranging) of
         {ok, NewMacTxState} ->

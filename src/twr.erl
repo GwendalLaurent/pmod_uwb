@@ -65,6 +65,9 @@ initiator_loop(N) ->
     initiator_loop(N-1).
 
 
+-spec initiator_data(Id, RangingInfo) -> ok when
+      Id :: integer(),
+      RangingInfo :: ranging_informations().
 initiator_data(Id, RangingInfo) ->
     gen_server:call(?MODULE, {initiator, RangingInfo, Id}).
 
@@ -121,7 +124,7 @@ single_sided_distance(InitRangingInfos, RespStartTS, RespStopTS) ->
     % io:format("ToF: ~w - D: ~w ~n", [ToF, ToF * ?C]),
     ToF * ?C.
 
--spec std_dev(Measures :: list(), Mean :: number(), N :: number(), Acc :: number()) -> number().
+-spec std_dev(Measures :: [number()], Mean :: float(), N :: non_neg_integer(), Acc :: number()) -> float().
 std_dev([], _, N, Acc) ->
     math:sqrt(Acc/N);
 std_dev([H | T], Mean, N, Acc) ->
