@@ -1,7 +1,7 @@
--module(twr).
+-module(single_sided).
 
--include("ieee802154.hrl").
--include("mac_frame.hrl").
+-include("../ieee802154.hrl").
+-include("../mac_frame.hrl").
 
 -behaviour(gen_server).
 
@@ -23,8 +23,13 @@
 
 -define(TU, 15.65e-12).
 -define(C, 299792458).
+
+-define(TX_ANTD, 16450).
+-define(RX_ANTD, 16450).
 %--- API -----------------------------------------------------------------------
 start_link() ->
+    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
+    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     gen_server:start_link({local, ?MODULE}, ?MODULE, #{}, []).
 
 initiator() ->

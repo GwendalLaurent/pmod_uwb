@@ -39,8 +39,6 @@
 
 -define(CCA_DURATION, 283).
 
--define(TX_ANTD, 16450).
--define(RX_ANTD, 16450).
 % Sends/receive only 1 frame
 tx() ->
     % FrameControl = #frame_control{ack_req = ?ENABLED},
@@ -164,11 +162,9 @@ start(_Type, _Args) ->
     %                                      input_callback = fun rx_callback/4}),
     ieee802154:start_link(
       #ieee_parameters{mac_layer = mac_layer,
-                       input_callback = fun rx_ranging_callback/4}
+                       input_callback = fun double_sided_3_msg:rx_callback/4}
      ),
-    twr:start_link(),
-    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
-    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
+    double_sided_3_msg:start_link(),
     % pmod_uwb:write(rx_fwto, #{rxfwto => 16#FFFF}),
     % pmod_uwb:write(sys_cfg, #{rxwtoe => 2#1}),
     % ieee802154:rx_on(),
