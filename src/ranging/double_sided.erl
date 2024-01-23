@@ -4,10 +4,11 @@
 
 -include("../ieee802154.hrl").
 -include("../mac_frame.hrl").
+-include("ranging_utils.hrl").
 
 % API
 -export([start_link/0]).
--export([initiator/0]).
+-export([initiator/1]).
 -export([rx_callback/4]).
 
 %%% gen_statem callbacks
@@ -21,14 +22,8 @@
 -export([idle/3]).
 -export([middle_init/3]).
 -export([wait_report/3]).
-%
+
 %--- Macros --------------------------------------------------------------------
-
--define(TU, 15.65e-12).
--define(C, 299792458).
-
--define(TX_ANTD, 16450).
--define(RX_ANTD, 16450).
 
 %--- Rx callback ---------------------------------------------------------------
 rx_callback(Frame, _LQI, _Security, RangingInfos) ->
@@ -36,20 +31,12 @@ rx_callback(Frame, _LQI, _Security, RangingInfos) ->
 
 %--- API -----------------------------------------------------------------------
 start_link() ->
-    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
-    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     gen_statem:start_link({local, ?MODULE}, ?MODULE, #{}, []).
 
-initiator() ->
-    ieee802154:set_mac_short_address(<<16#0001:16>>),
-    ieee802154:set_pan_id(<<16#CAFE:16>>),
-    ieee802154:rx_on(?ENABLED),
-    initiator_loop(100).
-%--- API internal --------------------------------------------------------------
-initiator_loop(0) ->
+initiator(0) ->
     Measures = get_measures(),
-    do_stats(Measures);
-initiator_loop(N) ->
+    ranging_utils:do_stats(Measures);
+initiator(N) ->
     Ref = make_ref(),
     {Frame, RangingInfos} = send_poll(),
     tx(Frame, RangingInfos, {self(), Ref}),
@@ -58,8 +45,9 @@ initiator_loop(N) ->
     after 
         500 -> flush_current()
     end,
-    initiator_loop(N-1).
+    initiator(N-1).
 
+%--- API: internal
 tx(Frame, RangingInfos, From) ->
     gen_statem:cast(?MODULE, {tx, From, Frame, RangingInfos}).
 
@@ -88,22 +76,6 @@ send_poll() ->
     {ok, RangingInfos} = ieee802154:transmission(Frame, ?ALL_RANGING),
     {Frame, RangingInfos}.
 
-do_stats(Measures) ->
-    Nbr = length(Measures),
-    Avg = lists:sum(Measures)/Nbr,
-    Min = lists:min(Measures),
-    Max = lists:max(Measures),
-    StdDev = std_dev(Measures, Avg, Nbr, 0),
-    io:format("-------------------------------- Summary --------------------------------~n"),
-    io:format("Average distance measured: ~w - standard deviation: ~w ~n", [Avg, StdDev]),
-    io:format("Total: ~w - Min: ~w - Max ~w~n", [Nbr, Min, Max]),
-    io:format("-------------------------------------------------------------------------~n"). 
-
--spec std_dev(Measures :: [number()], Mean :: float(), N :: non_neg_integer(), Acc :: number()) -> float().
-std_dev([], _, N, Acc) ->
-    math:sqrt(Acc/N);
-std_dev([H | T], Mean, N, Acc) ->
-    std_dev(T, Mean, N, Acc + math:pow(H-Mean, 2)).
 %--- gen_statem callbacks ------------------------------------------------------
 init(_) ->
     {ok, idle, #{measures => [], fails => 0}}.

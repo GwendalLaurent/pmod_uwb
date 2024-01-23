@@ -4,6 +4,7 @@
 
 -include("../ieee802154.hrl").
 -include("../mac_frame.hrl").
+-include("ranging_utils.hrl").
 
 % API
 -export([start_link/0]).
@@ -22,29 +23,18 @@
 
 %--- Macros --------------------------------------------------------------------
 
--define(TU, 15.65e-12).
--define(C, 299792458).
-
--define(TX_ANTD, 16450).
--define(RX_ANTD, 16450).
-
 %--- API -----------------------------------------------------------------------
 start_link() ->
-    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
-    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     gen_statem:start_link({local, ?MODULE}, ?MODULE, #{}, []).
 
 initiator(0) ->
     Measures = get_results(),
-    do_stats(Measures);
+    ranging_utils:do_stats(Measures);
 initiator(N) ->
     initiator(),
     initiator(N-1).
 
 initiator() ->
-    ieee802154:set_mac_short_address(<<16#0001:16>>),
-    ieee802154:set_pan_id(<<16#CAFE:16>>),
-    ieee802154:rx_on(?ENABLED),
     {ok, RangingInfos, Frame} = send_poll(),
     Ref = make_ref(),
     From = {self(), Ref},
@@ -132,22 +122,6 @@ rx(Frame, RangingInfos) ->
 get_results() ->
     gen_statem:call(?MODULE, {measures}).
 
-do_stats(Measures) ->
-    Nbr = length(Measures),
-    Avg = lists:sum(Measures)/Nbr,
-    Min = lists:min(Measures),
-    Max = lists:max(Measures),
-    StdDev = std_dev(Measures, Avg, Nbr, 0),
-    io:format("-------------------------------- Summary --------------------------------~n"),
-    io:format("Average distance measured: ~w - standard deviation: ~w ~n", [Avg, StdDev]),
-    io:format("Total: ~w - Min: ~w - Max ~w~n", [Nbr, Min, Max]),
-    io:format("-------------------------------------------------------------------------~n"). 
-
--spec std_dev(Measures :: [number()], Mean :: float(), N :: non_neg_integer(), Acc :: number()) -> float().
-std_dev([], _, N, Acc) ->
-    math:sqrt(Acc/N);
-std_dev([H | T], Mean, N, Acc) ->
-    std_dev(T, Mean, N, Acc + math:pow(H-Mean, 2)).
 %--- gen_statem internal -------------------------------------------------------
 send_final(PollFrame) -> 
     {FC, MH, _} = PollFrame,

@@ -2,6 +2,7 @@
 
 -include("../ieee802154.hrl").
 -include("../mac_frame.hrl").
+-include("ranging_utils.hrl").
 
 -behaviour(gen_server).
 
@@ -21,21 +22,11 @@
 -define(FREQ_OFFSET_MULTIPLIER, 1/( 131072 * 2 * (1024/998.4e6))).
 -define(HERTZ_TO_PPM_MUL, 1.0e-6/6489.6e6).
 
--define(TU, 15.65e-12).
--define(C, 299792458).
-
--define(TX_ANTD, 16450).
--define(RX_ANTD, 16450).
 %--- API -----------------------------------------------------------------------
 start_link() ->
-    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
-    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     gen_server:start_link({local, ?MODULE}, ?MODULE, #{}, []).
 
 initiator() ->
-    ieee802154:set_mac_short_address(<<16#0001:16>>),
-    ieee802154:set_pan_id(<<16#CAFE:16>>),
-    ieee802154:rx_on(?ENABLED),
     Payload = <<"RANGING">>,
     Seqnum = rand:uniform(255),
     FrameControl = #frame_control{ack_req = ?ENABLED,
@@ -53,14 +44,7 @@ initiator() ->
 initiator_multiple() ->
     initiator_loop(100),
     {ok, Measures} = dump_measures(),
-    Total = length(Measures),
-    MeasuresAvg = lists:sum(Measures)/Total,
-    StdDev = std_dev(Measures, MeasuresAvg, Total, 0),
-    io:format("-------------------------------- Summary --------------------------------~n"),
-    io:format("Sent ~w request ",[Total]),
-    io:format("Average distance measured: ~w - standard deviation: ~w ~n", [MeasuresAvg, StdDev]),
-    io:format("Min: ~w - Max ~w~n", [lists:min(Measures), lists:max(Measures)]),
-    io:format("-------------------------------------------------------------------------~n").
+    ranging_utils:do_stats(Measures).
 
 initiator_loop(0) ->
     ok;
@@ -128,9 +112,3 @@ single_sided_distance(InitRangingInfos, RespStartTS, RespStopTS) ->
     ToF = ((TRound-TReply) *((1-ClockOffsetRatio)/2.0)) * ?TU,
     % io:format("ToF: ~w - D: ~w ~n", [ToF, ToF * ?C]),
     ToF * ?C.
-
--spec std_dev(Measures :: [number()], Mean :: float(), N :: non_neg_integer(), Acc :: number()) -> float().
-std_dev([], _, N, Acc) ->
-    math:sqrt(Acc/N);
-std_dev([H | T], Mean, N, Acc) ->
-    std_dev(T, Mean, N, Acc + math:pow(H-Mean, 2)).

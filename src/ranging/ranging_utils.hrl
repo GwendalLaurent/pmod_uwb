@@ -1,0 +1,2 @@
+-define(TU, 15.65e-12). % pmod_uwb time units
+-define(C, 299792458). % Speed of light in meters per second

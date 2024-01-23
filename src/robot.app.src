@@ -8,7 +8,9 @@
         stdlib,
         grisp
     ]},
-    {env,[]},
+    {env,[
+        {pan_id, <<16#CAFE:16>>}
+    ]},
     {modules, []},
 
     {licenses, ["Apache 2.0"]},

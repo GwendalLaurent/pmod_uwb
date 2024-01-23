@@ -18,15 +18,13 @@
 % CSMA tests
 -export([jammer/0]).
 
-% Ranging
--export([rx_ranging/0]).
-
 % Callbacks
 -export([start/2]).
 -export([stop/1]).
 
 -compile([{nowarn_unused_function, [{rx_callback, 4}]}]).
 
+%--- Macros --------------------------------------------------------------------
 -define(JAMMING_DATA, <<"JAMMING">>).
 -define(DATALENGTH, byte_size(?JAMMING_DATA)).
 
@@ -39,6 +37,10 @@
 
 -define(CCA_DURATION, 283).
 
+-define(TX_ANTD, 16450).
+-define(RX_ANTD, 16450).
+
+%--- API -----------------------------------------------------------------------
 % Sends/receive only 1 frame
 tx() ->
     % FrameControl = #frame_control{ack_req = ?ENABLED},
@@ -150,24 +152,25 @@ rx() ->
     ieee802154:reception(),
     rx().
 
-rx_ranging() ->
-    ieee802154:set_pan_id(?PANID),
-    ieee802154:set_mac_short_address(?RECEIVER_ADDR),
-    ieee802154:rx_on(?ENABLED).
-
 start(_Type, _Args) ->
     {ok, Supervisor} = robot_sup:start_link(),
     grisp:add_device(spi2, pmod_uwb),
-    %ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer,
-    %                                      input_callback = fun rx_callback/4}),
+    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
+    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
+
     ieee802154:start_link(
       #ieee_parameters{mac_layer = mac_layer,
                        input_callback = fun double_sided_3_msg:rx_callback/4}
      ),
+
+    {ok, PanId} = application:get_env(robot, pan_id),
+    {ok, MacAddr} = application:get_env(robot, mac_addr),
+    io:format("Env: ~p~n", [application:get_all_env()]),
+    ieee802154:set_pan_id(PanId),
+    ieee802154:set_mac_short_address(MacAddr),
+
     double_sided_3_msg:start_link(),
-    % pmod_uwb:write(rx_fwto, #{rxfwto => 16#FFFF}),
-    % pmod_uwb:write(sys_cfg, #{rxwtoe => 2#1}),
-    % ieee802154:rx_on(),
+    ieee802154:rx_on(?ENABLED),
     {ok, Supervisor}.
 
 % @private
