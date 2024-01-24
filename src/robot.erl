@@ -53,7 +53,8 @@ tx_ranging() ->
     pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     FrameControl = #frame_control{ack_req = ?ENABLED},
     MacHeader = #mac_header{},
-    ieee802154:transmission({FrameControl, MacHeader, <<"Test">>}, ?ALL_RANGING).
+    ieee802154:transmission({FrameControl, MacHeader, <<"Test">>},
+                            ?ALL_RANGING).
 
 
 -spec rx_callback(Frame, LinkQuality, Security, Ranging) -> ok when
@@ -70,46 +71,19 @@ rx_callback({_FrameControl, _MacHeader, _Payload}, LQI, Security, Ranging) ->
     % io:format("Received frame with seqnum: ~w - Payload: ~w ~n",
     %           [_MacHeader#mac_header.seqnum, _Payload]).
 
--spec rx_ranging_callback(Frame, LinkQuality, Security, Ranging) -> ok when
-      Frame       :: frame(),
-      LinkQuality :: integer(),
-      Security    :: ieee802154:security(),
-      Ranging     :: ieee802154:ranging_informations().
-rx_ranging_callback(Frame, _LQI, _Security, Ranging) ->
-    case Ranging#ranging_informations.ranging_received of
-        ?RANGING_ACTIVE -> transmit_resp(Frame, Ranging); % Responder receives RNG req
-        _ -> record_infos(Frame) % Inititator receive resp. report
-    end.
-
--spec transmit_resp(frame(), ranging_informations()) -> Result when
-      Result :: {ok, ranging_informations()} | {error, atom()}.
-transmit_resp({_, MacHeader, <<"RANGING">>}, AckRangingInfos) ->
-    Seqnum = rand:uniform(255),
-    RespFC = #frame_control{dest_addr_mode = ?SHORT_ADDR,
-                            src_addr_mode = ?SHORT_ADDR},
-    RespMH = #mac_header{seqnum = Seqnum,
-                         dest_addr = MacHeader#mac_header.src_addr,
-                         src_pan = MacHeader#mac_header.dest_pan,
-                         src_addr = MacHeader#mac_header.src_addr,
-                         dest_pan = MacHeader#mac_header.dest_pan},
-    Id = MacHeader#mac_header.seqnum,
-    RangingStart = AckRangingInfos#ranging_informations.ranging_counter_start,
-    RangingStop = AckRangingInfos#ranging_informations.ranging_counter_stop,
-    Payload = <<"RANGING-RESP", Id:8, RangingStart:40, RangingStop:40>>,
-    ieee802154:transmission({RespFC, RespMH, Payload}).
-
-record_infos({_, _, <<"RANGING-RESP", Id:8, RangingStart:40, RangingStop:40>>}) ->
-    twr:responder_data(Id, RangingStart, RangingStop);
-record_infos(_) -> ok.
-
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().
 
 tx(0, Total, Success, Error) -> {Success, Error, Total};
 tx(N, Total, Success, Error) ->
-    % io:format("~w~n", [N]),
     Seqnum = Total rem 512,
-    case ieee802154:transmission({#frame_control{pan_id_compr = ?ENABLED, ack_req = ?ENABLED}, #mac_header{seqnum = Seqnum, dest_pan = ?PANID, dest_addr = ?RECEIVER_ADDR, src_addr = ?SENDER_ADDR}, ?BENCHMARK_DATA}) of
+    case ieee802154:transmission({#frame_control{pan_id_compr = ?ENABLED,
+                                                 ack_req = ?ENABLED},
+                                  #mac_header{seqnum = Seqnum,
+                                              dest_pan = ?PANID,
+                                              dest_addr = ?RECEIVER_ADDR,
+                                              src_addr = ?SENDER_ADDR},
+                                  ?BENCHMARK_DATA}) of
         {ok, _} -> tx(N-1, Total+1, Success+1, Error);
         _ -> tx(N-1, Total+1, Success, Error+1)
     end.
@@ -122,8 +96,11 @@ jammer(0) ->
     ok;
 jammer(N) ->
     pmod_uwb:write_tx_data(?JAMMING_DATA),
-    pmod_uwb:write(tx_fctrl, #{txboffs => 2#0, tr => 2#0, tflen => ?DATALENGTH}),
-    pmod_uwb:write(sys_ctrl, #{txstrt => 2#1, txdlys => 0}), % start transmission and some options
+    pmod_uwb:write(tx_fctrl, #{txboffs => 2#0,
+                               tr => 2#0,
+                               tflen => ?DATALENGTH}),
+    pmod_uwb:write(sys_ctrl, #{txstrt => 2#1,
+                               txdlys => 0}),
     pmod_uwb:wait_for_transmission(),
     jammer(N-1).
 

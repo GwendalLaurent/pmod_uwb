@@ -48,15 +48,14 @@
 
 %% @doc Starts the IEEE 812.15.4 stack and creates a link
 %%
-%% The parameter map has to be composed of at least:
-%% * mac_layer: The module that has to be used for the mac_layer
-%%
 %% ```
 %% The following code will start the stack using the mac_layer module
-%% 1> ieee802154:start_link(#{mac_layer => mac_layer}).
+%% And without any callback
+%% 1> ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer}).
 %%
-%% Starting using a mock layer
-%% 2> ieee802154:start_link(#mac_layer => mock_mac}).
+%% Using a custom callback function
+%% 2> ieee802154:start_link(#ieee_parameters{mac_layer = mock_mac,
+%%                                           input_callback = fun callback/4}).
 %% '''
 %%
 %% @param Params: A map containing the parameters of the IEEE stack
@@ -67,6 +66,8 @@
 start_link(Params) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Params, []).
 
+%% @doc Same as start_link/1 but no link is created
+%% @end
 -spec start(Params) -> {ok, pid()} | {error, any()} when
       Params :: ieee_parameters().
 start(Params) ->
@@ -78,24 +79,37 @@ stop_link() ->
 stop() -> gen_server:stop(?MODULE).
 
 %% @doc
-%% @equiv transmission(Frame, ?NON_RANGING)
+%% @equiv transmission(Frame, 0)
 %% @end
 -spec transmission(Frame) -> Result when
       Frame        :: frame(),
       Result       :: {ok, Ranging} | {error, Error},
       Ranging      :: ranging_informations(),
-      Error        :: atom().
+      Error        :: tx_error().
 transmission(Frame) ->
     transmission(Frame, ?NON_RANGING).
 
 %% @doc Performs a transmission on the defined IEEE 802.15.4 stack
-%% No timestamp because its value is the same as Ranging counter start
+%% When ranging has been activated for the frame, the second element of the
+%% tuple contains different values that can be used for ranging operations
+%% For more informations please consult the IEEE 802.15.4 standard.
+%% Note that the variable `Timestamp' is omited because its value is the same
+%% as `Ranging counter start'
+%%
+%% When Ranging isn't activated, the 2nd element of the tuple shall be ignored
+%% ```
+%% Ranging not activated for transmission
+%% 1> ieee802154:transmission(Frame, ?NON_RANGING).
+%%
+%% Activate ranging for the transmission
+%% 2> ieee802154:transmission(Frame, ?ALL_RANGING).
+%% '''
 %% @end
 -spec transmission(Frame, Ranging) -> Result when
       Frame        :: frame(),
       Ranging      :: ranging_tx(),
-      Result       :: {ok, Ranging} | {error, Error},
-      Ranging      :: ranging_informations(),
+      Result       :: {ok, RangingInfos} | {error, Error},
+      RangingInfos :: ranging_informations(),
       Error        :: tx_error().
 transmission(Frame, Ranging) ->
     gen_server:call(?MODULE,
@@ -103,6 +117,7 @@ transmission(Frame, Ranging) ->
                     infinity).
 
 %% @doc Performs a reception on the IEEE 802.15.4 stack
+%% @deprecated This function will be deprecated
 %% @end
 -spec reception() -> Result when
       Result :: {ok, frame()} | {error, atom()}.
@@ -110,7 +125,7 @@ reception() ->
     gen_server:call(?MODULE, {rx}, infinity).
 
 %% @doc
-%% @equiv rx_on(?DISABLED)
+%% @equiv rx_on(0)
 %% @end
 -spec rx_on() -> Result when
       Result :: ok | {error, atom()}.
@@ -118,6 +133,18 @@ rx_on() ->
     gen_server:call(?MODULE, {rx_on, ?DISABLED}).
 
 %% @doc Turns on the continuous reception
+%% When a frame is received, the callback function is called
+%% (see {@link start_link})
+%%
+%% The ranging parameter is used to specify if ranging is activated during rx
+%%
+%% ```
+%% Ranging not activated
+%% 1> ieee802154:rx_on(?DISABLED).
+%%
+%% Ranging activated
+%% 2> ieee802154:rx_on(?ACTIVATED).
+%% '''
 %% @end
 -spec rx_on(Ranging) -> ok when
       Ranging :: ?DISABLED | ?ENABLED.

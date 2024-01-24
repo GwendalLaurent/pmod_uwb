@@ -6,7 +6,7 @@
 
 
 %--- API -----------------------------------------------------------------------
--spec do_stats([number()]) -> ok.
+-spec do_stats([number(), ...]) -> ok.
 do_stats(Measures) ->
     Nbr = length(Measures),
     Avg = lists:sum(Measures)/Nbr,

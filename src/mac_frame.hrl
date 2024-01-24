@@ -35,7 +35,7 @@
 
 % @doc MAC header for IEEE 802.15.4
 % Doesn't include the frame control nor a potential auxiliary security header
--record(mac_header, {seqnum = 0 :: integer(),
+-record(mac_header, {seqnum = 0 :: non_neg_integer(),
                      dest_pan = <<16#FFFF:16>> :: addr(),
                      dest_addr = <<16#FFFF:16>> :: addr(),
                      src_pan = <<16#FFFF:16>> :: addr(),
