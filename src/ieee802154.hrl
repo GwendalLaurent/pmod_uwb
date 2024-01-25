@@ -12,11 +12,16 @@
 -define(ALL_RANGING, 1).
 % PHY_HEADER_ONLY => Not supported in our case
 
+% CSMA constants
+-define(MACMAXFRAMERETRIES, 3).
+-define(MACACKWAITDURATION, 4000).  % works with 2000 µs but calculations give me 4081µs
+% -define(MACACKWAITDURATION, 2000).  % works with 2000 µs but calculations give me 4081µs
+
 %--- Types ---------------------------------------------------------------------
 
 %--- Record types
--record(ieee_parameters, {mac_layer = mac_layer :: module(),
-                          mac_parameters = #{phy_layer => pmod_uwb, duty_cycle => duty_cycle_non_beacon} :: map(),
+-record(ieee_parameters, {duty_cycle = duty_cycle_non_beacon :: module(),
+                          phy_layer = pmod_uwb :: module(),
                           input_callback = fun(_, _, _, _) -> ok end :: input_callback()}).
 
 
@@ -42,7 +47,7 @@
                       cw0                  :: cw0()}).
 
 %--- IEEE 802.15.4 parameter types
--export_type([ieee_parameters/0, ranging_informations/0, security/0, input_callback/0, ranging_tx/0]).
+-export_type([ieee_parameters/0, ranging_informations/0, security/0, input_callback/0, ranging_tx/0, tx_error/0]).
 -type cw0() :: 1 | 2.
 -type mac_max_BE() :: 3..8.
 -type mac_max_csma_backoff() :: 0..5.
@@ -64,3 +69,5 @@
 -type ieee_parameters() :: #ieee_parameters{}.
 
 -type csma_params() :: #csma_params{}.
+
+-type tx_error() :: invalid_address | invalid_gts | transaction_overflow | transaction_expired | no_ack | frame_too_long | channel_access_failure.

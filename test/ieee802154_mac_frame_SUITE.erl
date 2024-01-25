@@ -1,4 +1,4 @@
--module(ieee802154_mac_layer_SUITE).
+-module(ieee802154_mac_frame_SUITE).
 
 %--- Includes ------------------------------------------------------------------
 -include_lib("common_test/include/ct.hrl").
@@ -35,25 +35,10 @@
 -export([encode_decode_no_dest_ext_src/1]).
 -export([encode_decode_invalid_header_fields_value/1]).
 
--export([mac_get_set_ext_mac_addr/1]).
--export([mac_get_set_short_mac_addr/1]).
--export([mac_get_set_pan_id/1]).
--export([mac_get_set_unknown_value/1]).
-
--export([mac_tx_invalid_address/1]).
-
--export([mac_get_set_max_be/1]).
--export([mac_get_set_max_csma_backoffs/1]).
--export([mac_get_set_min_BE/1]).
--export([mac_get_set_unsupported_attribute/1]).
-
 -compile({nowarn_unused_function, [debug_bitstring_hex/1]}).
 
 %--- Callbacks -----------------------------------------------------------------
-all() -> [{group, encode_decode},
-          {group, mac_get_set},
-          {group, tx},
-          {group, get_set_pib}].
+all() -> [{group, encode_decode}].
 
 groups() -> [{encode_decode, [parallel], [mac_message_from_api,
                                           mac_message_pan_id_not_compressed,
@@ -80,19 +65,8 @@ groups() -> [{encode_decode, [parallel], [mac_message_from_api,
              {mac_get_set, [parallel], [mac_get_set_ext_mac_addr,
                                         mac_get_set_short_mac_addr,
                                         mac_get_set_pan_id,
-                                        mac_get_set_unknown_value]},
-             {tx, [parallel], [mac_tx_invalid_address]},
-             {get_set_pib, [parallel], [mac_get_set_max_be,
-                                        mac_get_set_max_csma_backoffs,
-                                        mac_get_set_min_BE,
-                                        mac_get_set_unsupported_attribute]}].
+                                        mac_get_set_unknown_value]}].
 
-init_per_group(tx, Config) -> init_per_group(mac_get_set, Config);
-init_per_group(get_set_pib, Config) -> init_per_group(mac_get_set, Config);
-init_per_group(mac_get_set, Config) ->
-    mock_phy:start(spi2, #{}),
-    MacState = gen_mac_layer:start(mac_layer, #{phy_layer => mock_phy, duty_cycle => duty_cycle_non_beacon}),
-    [{mac_state, MacState} | Config];
 init_per_group(_, Config) ->
     Config.
 
@@ -263,69 +237,7 @@ encode_decode_invalid_header_fields_value(_Config) ->
     {'EXIT', {internal_decoding_error, _}} = catch mac_frame:decode(InvalidFrame), 
     ok. 
 
-%--- Test cases: mac_get_set --------------------------------------------------
-mac_get_set_ext_mac_addr(Config) ->
-    MacState = ?config(mac_state, Config),
-    EncodedAddress = <<16#DECACAFE00000001:64>>,
-    {ok, State2, <<_/bitstring>>} = gen_mac_layer:get(MacState, mac_extended_address),
-    {ok, State3} = gen_mac_layer:set(State2, mac_extended_address, EncodedAddress),
-    {ok, _, EncodedAddress} = gen_mac_layer:get(State3, mac_extended_address).
- 
-mac_get_set_short_mac_addr(Config) -> 
-    MacState = ?config(mac_state, Config),
-    EncodedAddress = <<16#1337:16>>,
-    {ok, State2, <<_/bitstring>>} = gen_mac_layer:get(MacState, mac_short_address),
-    {ok, State3} = gen_mac_layer:set(State2, mac_short_address, EncodedAddress),
-    {ok, _, EncodedAddress} = gen_mac_layer:get(State3, mac_short_address).
-
-mac_get_set_pan_id(Config) -> 
-    MacState = ?config(mac_state, Config),
-    PanID = <<16#00BE:16>>,
-    {ok, State2, <<_/bitstring>>} = gen_mac_layer:get(MacState, mac_pan_id),
-    {ok, State3} = gen_mac_layer:set(State2, mac_pan_id, PanID),
-    {ok, _, PanID} = gen_mac_layer:get(State3, mac_pan_id).
-
-mac_get_set_unknown_value(Config) ->
-    MacState = ?config(mac_state, Config),
-    {error, State, unsupported_attribute} = gen_mac_layer:get(MacState, fake_attribute),
-    {error, _, unsupported_attribute} = gen_mac_layer:set(State, fake_attribute, fake_value).
-
-%--- Test cases: tx
-mac_tx_invalid_address(Config) ->
-    MacState = ?config(mac_state, Config),
-    {error, _State, invalid_address} = gen_mac_layer:tx(MacState, {#frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE}, #mac_header{}, <<"Invalid address">>}, ?DISABLED).
-
-%--- Test cases: Pib setters/getters
-%%  cw0 => 2, % cf. p.22 standard
-%%  mac_max_BE => 5,
-%%  mac_max_csma_backoffs => 4,
-%%  mac_min_BE => 3
-mac_get_set_max_be(Config) ->
-    MacState = ?config(mac_state, Config),
-    get_set_attribute(MacState, mac_max_BE, 5, 6).
-
-mac_get_set_max_csma_backoffs(Config) ->
-    MacState = ?config(mac_state, Config),
-    get_set_attribute(MacState, mac_max_csma_backoffs, 4, 2).
-
-mac_get_set_min_BE(Config) ->
-    MacState = ?config(mac_state, Config),
-    get_set_attribute(MacState, mac_min_BE, 3, 1).
-
-mac_get_set_unsupported_attribute(Config) ->
-    MacState = ?config(mac_state, Config),
-    {error, NewMacState, unsupported_attribute} = gen_mac_layer:get(MacState, random_attribute),
-    {error, _, unsupported_attribute} = gen_mac_layer:set(NewMacState, random_attribute, random_value).
-
 %--- Utils --------------------------------------------------------------------
-
-get_set_attribute(MacState, Attribute, DefaultValue, NewValue) ->
-    {ok, NewState, DefaultGetValue} = gen_mac_layer:get(MacState, Attribute),
-    ?assertEqual(DefaultValue, DefaultGetValue),
-    {ok, NewState2} = gen_mac_layer:set(NewState, Attribute, NewValue),
-    {ok, _, NewGetValue} = gen_mac_layer:get(NewState2, Attribute),
-    ?assertNotEqual(DefaultValue, NewValue),
-    ?assertEqual(NewValue, NewGetValue).
 
 debug_bitstring_hex(Bitstring) ->
     lists:flatten([io_lib:format("16#~2.16.0B ", [X]) || <<X>> <= Bitstring]).

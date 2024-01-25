@@ -18,7 +18,6 @@
 -module(gen_duty_cycle).
 
 -include("ieee802154.hrl").
--include("gen_mac_layer.hrl").
 
 -callback init(PhyModule) -> State when
       PhyModule :: module(),

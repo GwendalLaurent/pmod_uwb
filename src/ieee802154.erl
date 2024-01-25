@@ -24,6 +24,9 @@
 -export([get_pan_id/0]).
 -export([set_pan_id/1]).
 
+-export([get_pib_attribute/1]).
+-export([set_pib_attribute/2]).
+
 % gen_server callbacks
 -export([init/1]).
 -export([terminate/2]).
@@ -37,10 +40,21 @@
 
 -include("ieee802154.hrl").
 -include("mac_frame.hrl").
--include("gen_mac_layer.hrl").
 
 %--- Types ---------------------------------------------------------------------
--type state() :: #{mac_layer := gen_mac_layer:state(),
+-type pib_attribute() :: cw0 | mac_max_BE | mac_min_BE | mac_max_csma_backoffs.
+
+-type pib_attributes() :: #{cw0 := cw0(),
+                            mac_max_BE := mac_max_BE(),
+                            mac_min_BE := mac_max_BE(),
+                            mac_max_csma_backoffs := mac_max_csma_backoff(),
+                            _ => _}.
+
+-type pib_set_error() :: read_only | unsupported_attribute | invalid_parameter.
+
+-type state() :: #{phy_layer := module(),
+                   duty_cycle := gen_duty_cycle:state(),
+                   attributes := pib_attributes(),
                    input_callback := input_callback(),
                    _:=_}.
 
@@ -49,13 +63,14 @@
 %% @doc Starts the IEEE 812.15.4 stack and creates a link
 %%
 %% ```
-%% The following code will start the stack using the mac_layer module
-%% And without any callback
-%% 1> ieee802154:start_link(#ieee_parameters{mac_layer = mac_layer}).
+%% The following code will start the stack with the default parameters
+%% 1> ieee802154:start_link(#ieee_parameters{}).
 %%
 %% Using a custom callback function
-%% 2> ieee802154:start_link(#ieee_parameters{mac_layer = mock_mac,
-%%                                           input_callback = fun callback/4}).
+%% 2> ieee802154:start_link(#ieee_parameters{input_callback = fun callback/4}).
+%%
+%% Using a custom phy module
+%% 3> ieee802154:start_link(#ieee_parameters{phy_layer = mock_phy_network}).
 %% '''
 %%
 %% @param Params: A map containing the parameters of the IEEE stack
@@ -112,9 +127,15 @@ transmission(Frame) ->
       RangingInfos :: ranging_informations(),
       Error        :: tx_error().
 transmission(Frame, Ranging) ->
-    gen_server:call(?MODULE,
-                    {tx, Frame, Ranging},
-                    infinity).
+    {FH, _, _} = Frame,
+    case FH of
+        #frame_control{dest_addr_mode = ?NONE, src_addr_mode = ?NONE} ->
+            {error, invalid_address};
+        _ ->
+            gen_server:call(?MODULE,
+                            {tx, Frame, Ranging},
+                            infinity)
+    end.
 
 %% @doc Performs a reception on the IEEE 802.15.4 stack
 %% @deprecated This function will be deprecated
@@ -192,24 +213,43 @@ get_pan_id() ->
 set_pan_id(Value) ->
     gen_server:call(?MODULE, {set, mac_pan_id, Value}).
 
+-spec get_pib_attribute(Attribute) -> Value when
+      Attribute :: pib_attribute(),
+      Value     :: term().
+get_pib_attribute(Attribute) ->
+    gen_server:call(?MODULE, {get, Attribute}).
+
+
+-spec set_pib_attribute(Attribute, Value) -> ok when
+      Attribute :: pib_attribute(),
+      Value     :: term().
+set_pib_attribute(Attribute, Value) ->
+    gen_server:call(?MODULE, {set, Attribute, Value}).
+
 %--- gen_statem callbacks ------------------------------------------------------
 
 -spec init(Params) -> {ok, State} when
       Params :: ieee_parameters(),
       State  :: state().
 init(Params) ->
-    MacState = gen_mac_layer:start(Params#ieee_parameters.mac_layer,
-                                   Params#ieee_parameters.mac_parameters),
-    Data = #{cache => #{tx => [], rx => []},
-             mac_layer => MacState,
+    PhyMod = Params#ieee_parameters.phy_layer,
+    write_default_conf(PhyMod),
+
+    DutyCycleState = gen_duty_cycle:start(Params#ieee_parameters.duty_cycle,
+                                          PhyMod),
+
+    Data = #{phy_layer => PhyMod,
+             duty_cycle => DutyCycleState,
+             attributes => default_attribute_values(),
+             ranging => ?DISABLED,
              input_callback => Params#ieee_parameters.input_callback},
     {ok, Data}.
 
 -spec terminate(Reason, State) -> ok when
       Reason :: term(),
-      State :: map().
-terminate(Reason, #{mac_layer := MacLayerState}) ->
-    gen_mac_layer:stop(MacLayerState, Reason).
+      State :: state().
+terminate(Reason, #{duty_cycle := GenDutyCycleState}) ->
+    gen_duty_cycle:stop(GenDutyCycleState, Reason).
 
 code_change(_, _, _, _) ->
     error(not_implemented).
@@ -217,49 +257,138 @@ code_change(_, _, _, _) ->
 -spec handle_call(_, _, State) -> Result when
       State   :: state(),
       Result  :: {reply, term(), State}.
-handle_call({rx_on, Ranging}, _From, State) ->
-    #{mac_layer := MacState, input_callback := Callback} = State,
-    case gen_mac_layer:turn_on_rx(MacState, Callback, Ranging) of
-        {ok, NewMacState} ->
-            {reply, ok, State#{mac_layer => NewMacState}};
-        {error, NewMacState, Error} ->
-            {reply, {error, Error}, State#{mac_layer => NewMacState}}
+handle_call({rx_on, RangingFlag}, _From, State) ->
+    #{duty_cycle := DCState,
+      input_callback := Callback} = State,
+    NewCallback = fun(Frame, LQI, _PRF, Sec, _PreambleRep, _DataRate, Rng) ->
+                    Callback(mac_frame:decode(Frame), LQI, Sec, Rng)
+                  end,
+    case gen_duty_cycle:turn_on(DCState, NewCallback, RangingFlag) of
+        {ok, NewDutyCycleState} ->
+            {reply, ok, State#{duty_cycle => NewDutyCycleState}};
+        {error, NewDutyCycleState, Error} ->
+            {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState,
+                                           ranging := RangingFlag}}
     end;
-handle_call({rx_off}, _From, #{mac_layer := MacState} = State) ->
-    {ok, NewMacState} = gen_mac_layer:turn_off_rx(MacState),
-    {reply, ok, State#{mac_layer => NewMacState}};
+handle_call({rx_off}, _From, #{duty_cycle := DCState} = State) ->
+    NewDCState = gen_duty_cycle:turn_off(DCState),
+    {reply, ok, State#{duty_cycle => NewDCState}};
 handle_call({tx, Frame, Ranging}, _From, State) ->
-    #{mac_layer := MacState} = State,
-    case gen_mac_layer:tx(MacState, Frame, Ranging) of
-        {ok, NewMacState, RangingInfo} ->
-            % Ret = {ok, RangingInfo},
-            {reply, {ok, RangingInfo}, State#{mac_layer => NewMacState}};
-        {error, NewMacState, Error} ->
-            {reply, {error, Error}, State#{mac_layer => NewMacState}}
+    #{duty_cycle := DCState, attributes := Attributes} = State,
+    CsmaParams = get_csma_params(Attributes),
+    {FrameControl, MacHeader, Payload} = Frame,
+    EncFrame = mac_frame:encode(FrameControl, MacHeader, Payload),
+    case gen_duty_cycle:tx_request(DCState, EncFrame, CsmaParams, Ranging) of
+        {ok, NewDCState, RangingInfos} ->
+            {reply, {ok, RangingInfos}, State#{duty_cycle => NewDCState}};
+        {error, NewDCState, Error} ->
+            {reply, {error, Error}, State#{duty_cycle => NewDCState}}
+        end;
+handle_call({rx}, _From, #{duty_cycle := DutyCycleState} = State) ->
+    case gen_duty_cycle:rx_request(DutyCycleState) of
+        {ok, NewDutyCycleState, Frame} ->
+            DecFrame = mac_frame:decode(Frame),
+            {reply, {ok, DecFrame}, State#{duty_cycle => NewDutyCycleState}};
+        {error, NewDutyCycleState, Error} ->
+            {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState}}
     end;
-handle_call({rx}, _From, #{mac_layer := MacState} = State) ->
-    case gen_mac_layer:rx(MacState) of
-        {ok, NewMacState, Frame} ->
-            {reply, {ok, Frame}, State#{mac_layer => NewMacState}};
-        {error, NewMacState, Error} ->
-            {reply, {error, Error}, State#{mac_layer => NewMacState}}
+handle_call({get, Attribute}, _From, State) ->
+    #{phy_layer := PhyMod, attributes := Attributes} = State,
+    case get(PhyMod, Attributes, Attribute) of
+        {ok, Value} ->
+            {reply, Value, State};
+        {error, Error} ->
+            {reply, {error, Error}, State}
     end;
-handle_call({get, Attribute}, _From, #{mac_layer := MacState} = State) ->
-    case gen_mac_layer:get(MacState, Attribute) of
-        {ok, NewMacState, Value} ->
-            {reply, Value, State#{mac_layer => NewMacState}};
-        {error, NewMacState, Error} ->
-            {keep_state, {error, Error}, State#{mac_layer => NewMacState}}
-    end;
-handle_call({set, Attribute, Value}, _From, #{mac_layer := MacState} = State) ->
-    case gen_mac_layer:set(MacState, Attribute, Value) of
-        {ok, NewMacState} ->
-            {reply, ok, State#{mac_layer => NewMacState}};
-        {error, NewMacState, Error} ->
-            {reply, {error, Error}, State#{mac_layer => NewMacState}}
+handle_call({set, Attribute, Value}, _From, State) ->
+    #{phy_layer := PhyMod, attributes := Attributes} = State,
+    case set(PhyMod, Attributes, Attribute, Value) of
+        {ok, NewAttributes} ->
+            {reply, ok, State#{attributes => NewAttributes}};
+        {error, Error} ->
+            {reply, {error, Error}, State}
     end;
 handle_call(_Request, _From, _State) ->
     error(call_not_recognized).
 
 handle_cast(_, _) ->
     error(not_implemented).
+
+%--- Internal ------------------------------------------------------------------
+-spec write_default_conf(PhyMod :: module()) -> ok.
+write_default_conf(PhyMod) ->
+    PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
+    PhyMod:write(sys_cfg, #{ffab => 1,
+                            ffad => 1,
+                            ffaa => 1,
+                            ffam => 1,
+                            ffen => 1,
+                            autoack => 1,
+                            rxwtoe => 1}).
+
+-spec default_attribute_values() -> Attributes when
+      Attributes :: #{cw0 := 2,
+                      mac_max_BE := 5,
+                      mac_max_csma_backoffs := 4,
+                      mac_min_BE := 3}.
+default_attribute_values() ->
+    #{
+      cw0 => 2, % cf. p.22 standard
+      mac_max_BE => 5,
+      mac_max_csma_backoffs => 4,
+      mac_min_BE => 3
+     }.
+
+-spec get_csma_params(Attributes) -> CsmaParams when
+      Attributes :: pib_attributes(),
+      CsmaParams :: csma_params().
+get_csma_params(Attributes) ->
+    #csma_params{mac_min_BE = maps:get(mac_min_BE, Attributes),
+                 mac_max_BE = maps:get(mac_max_BE, Attributes),
+                 mac_max_csma_backoff = maps:get(mac_max_csma_backoffs,
+                                                 Attributes),
+                 cw0 = maps:get(cw0, Attributes)}.
+
+%--- Internal: getter/setter PiB
+-spec get(PhyMod, Attributes, Attribute) -> Result  when
+    PhyMod     :: module(),
+    Attributes :: pib_attributes(),
+    Attribute  :: pib_attribute(),
+    Result     :: {ok, Value} | {error, unsupported_attribute},
+    Value      :: term().
+get(PhyMod, _Attributes, mac_extended_address) ->
+    #{eui := EUI} = PhyMod:read(eui),
+    {ok, EUI};
+get(PhyMod, _Attributes, mac_short_address) ->
+    #{short_addr := ShortAddr} = PhyMod:read(panadr),
+    {ok, ShortAddr};
+get(PhyMod, _Attributes, mac_pan_id) ->
+    #{pan_id := PanId} = PhyMod:read(panadr),
+    {ok, PanId};
+get(_PhyMod, Attributes, Attribute) when is_map_key(Attribute, Attributes) ->
+    {ok, maps:get(Attribute, Attributes)};
+get(_, _, _) ->
+    {error, unsupported_attribute}.
+
+-spec set(PhyMod, Attributes, Attribute, Value) -> Results when
+    PhyMod        :: module(),
+    Attributes    :: pib_attributes(),
+    Attribute     :: pib_attribute(),
+    Value         :: term(),
+    Results       :: {ok, NewAttributes} | {error, Error},
+    NewAttributes :: pib_attributes(),
+    Error         :: pib_set_error().
+set(PhyMod, Attributes, mac_extended_address, Value) ->
+    PhyMod:write(eui, #{eui => Value}), % TODO check the range/type/value given
+    {ok, Attributes};
+set(PhyMod, Attributes, mac_short_address, Value) ->
+    PhyMod:write(panadr, #{short_addr => Value}),
+    {ok, Attributes};
+set(PhyMod, Attributes, mac_pan_id, Value) ->
+    PhyMod:write(panadr, #{pan_id => Value}),
+    {ok, Attributes};
+set(_, Attributes, Attribute, Value) when is_map_key(Attribute, Attributes) ->
+    NewAttributes = maps:update(Attribute, Value, Attributes),
+    {ok, NewAttributes};
+set(_, _, _, _) ->
+    {error, unsupported_attribute}. % TODO detect if PIB is a read only attribute

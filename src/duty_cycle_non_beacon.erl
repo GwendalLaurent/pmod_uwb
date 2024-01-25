@@ -13,7 +13,6 @@
 
 % Include
 
--include("gen_mac_layer.hrl").
 -include("mac_frame.hrl").
 -include("ieee802154.hrl").
 

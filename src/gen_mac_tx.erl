@@ -27,7 +27,6 @@
 -export_type([state/0]).
 
 -opaque state() :: {Module::module(), Sub::term()}.
--type tx_error() :: atom(). % TODO add the correct atoms for the errors
 
 %--- API -----------------------------------------------------------------------
 -spec start(Module, PhyMod) -> State when

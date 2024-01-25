@@ -64,7 +64,7 @@ boot_ieee802154_node(Name, Network, AddressType, Address) ->
 boot_ieee802154_node(Name, Network, AddressType, Address, Callback) ->
     {Pid, Node} = boot_node(Name),
     erpc:call(Node, mock_phy_network, start, [spi2, #{network => Network}]), % Starting the the mock driver/physical layer
-    erpc:call(Node, ieee802154, start, [#ieee_parameters{mac_layer = mac_layer, mac_parameters = #{phy_layer => mock_phy_network, duty_cycle => duty_cycle_non_beacon}, input_callback = Callback }]),
+    erpc:call(Node, ieee802154, start, [#ieee_parameters{phy_layer = mock_phy_network, duty_cycle = duty_cycle_non_beacon, input_callback = Callback }]),
     case AddressType of
         mac_extended_address -> erpc:call(Node, ieee802154, set_mac_extended_address, [Address]);
         mac_short_address -> erpc:call(Node, ieee802154, set_mac_short_address, [Address])

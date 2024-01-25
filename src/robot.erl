@@ -136,7 +136,7 @@ start(_Type, _Args) ->
     pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
 
     ieee802154:start_link(
-      #ieee_parameters{mac_layer = mac_layer,
+      #ieee_parameters{duty_cycle = duty_cycle_non_beacon,
                        input_callback = fun double_sided_3_msg:rx_callback/4}
      ),
 
