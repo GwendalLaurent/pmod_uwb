@@ -18,6 +18,8 @@
 -export([get_set_max_csma_backoff/1]).
 -export([get_set_unsupported_attribute/1]).
 -export([double_on_off/1]).
+-export([mlme_reset_pib_reset_true_test/1]).
+-export([mlme_reset_pib_reset_false_test/1]).
 -export([tx_invalid_address/1]).
 
 %--- Callbacks -----------------------------------------------------------------
@@ -29,6 +31,8 @@ all() -> [stack_test,
           get_set_min_BE,
           get_set_max_csma_backoff,
           get_set_unsupported_attribute,
+          mlme_reset_pib_reset_true_test,
+          mlme_reset_pib_reset_false_test,
           tx_invalid_address].
 
 init_per_testcase(_, Config) ->
@@ -74,6 +78,13 @@ get_set_mac_extended_addr(_Config) ->
     ?assertEqual(ExtAddr, NewValue),
     ?assertNotEqual(ExtAddr, DefaultValue).
 
+%--- Test cases: PiB getters/setters
+%  cw0 => 2, % cf. p.22 standard
+%  mac_max_BE => 5,
+%  mac_max_csma_backoffs => 4,
+%  mac_min_BE => 3
+%  mac_pan_id => <<16#CAFE:16>>,
+%  mac_short_addr => <<16#ABCD:16>>
 get_set_mac_short_addr(_Config) ->
     ShortAddr = <<16#CAFE:16>>,
     DefaultValue = ieee802154:get_pib_attribute(mac_short_address),
@@ -97,11 +108,7 @@ get_set_max_be(_Config) ->
     NewValue = ieee802154:get_pib_attribute(mac_max_BE),
     ?assertEqual(MaxBe, NewValue),
     ?assertNotEqual(MaxBe, DefaultValue).
-%--- Test cases: PiB getters/setters
-%  cw0 => 2, % cf. p.22 standard
-%  mac_max_BE => 5,
-%  mac_max_csma_backoffs => 4,
-%  mac_min_BE => 3
+
 get_set_max_csma_backoff(_Config) ->
     MaxCSMABackoff = 5,
     DefaultValue = ieee802154:get_pib_attribute(mac_max_csma_backoffs),
@@ -121,6 +128,52 @@ get_set_min_BE(_Config) ->
 get_set_unsupported_attribute(_Config) ->
     {error, unsupported_attribute} = ieee802154:get_pib_attribute(unknown_attribute),
     {error, unsupported_attribute} = ieee802154:set_pib_attribute(unknown_attribute, 40).
+
+mlme_reset_pib_reset_true_test(_Config) ->
+    ieee802154:set_pib_attribute(mac_short_address, <<16#BEEF:16>>),
+    ieee802154:set_pib_attribute(mac_pan_id, <<16#FEED:16>>),
+    ieee802154:set_pib_attribute(mac_max_BE, 4),
+    ieee802154:set_pib_attribute(mac_max_csma_backoffs, 2),
+    ieee802154:set_pib_attribute(mac_min_BE, 1),
+
+    ieee802154:reset(true),
+
+    NewShortAddr = ieee802154:get_pib_attribute(mac_short_address),
+    ?assertEqual(<<16#FFFF:16>>, NewShortAddr),
+    NewPanId = ieee802154:get_pib_attribute(mac_pan_id),
+    ?assertEqual(<<16#FFFF:16>>, NewPanId),
+    #{pan_id := PmodPanId, short_addr := PmodShortAddr} = mock_phy:read(panadr),
+    ?assertEqual(<<16#FFFF:16>>, PmodPanId),
+    ?assertEqual(<<16#FFFF:16>>, PmodShortAddr),
+    NewMaxBe = ieee802154:get_pib_attribute(mac_max_BE),
+    ?assertEqual(5, NewMaxBe),
+    NewMaxCSMABackoffs = ieee802154:get_pib_attribute(mac_max_csma_backoffs),
+    ?assertEqual(4, NewMaxCSMABackoffs),
+    NewMinBE = ieee802154:get_pib_attribute(mac_min_BE),
+    ?assertEqual(3, NewMinBE).
+
+mlme_reset_pib_reset_false_test(_Config) ->
+    ieee802154:set_pib_attribute(mac_short_address, <<16#BEEF:16>>),
+    ieee802154:set_pib_attribute(mac_pan_id, <<16#FEED:16>>),
+    ieee802154:set_pib_attribute(mac_max_BE, 4),
+    ieee802154:set_pib_attribute(mac_max_csma_backoffs, 2),
+    ieee802154:set_pib_attribute(mac_min_BE, 1),
+
+    ieee802154:reset(false),
+
+    #{pan_id := PmodPanId, short_addr := PmodShortAddr} = mock_phy:read(panadr),
+    NewShortAddr = ieee802154:get_pib_attribute(mac_short_address),
+    ?assertEqual(<<16#BEEF:16>>, NewShortAddr),
+    ?assertEqual(<<16#BEEF:16>>, PmodShortAddr),
+    NewPanId = ieee802154:get_pib_attribute(mac_pan_id),
+    ?assertEqual(<<16#FEED:16>>, NewPanId),
+    ?assertEqual(<<16#FEED:16>>, PmodPanId),
+    NewMaxBe = ieee802154:get_pib_attribute(mac_max_BE),
+    ?assertEqual(4, NewMaxBe),
+    NewMaxCSMABackoffs = ieee802154:get_pib_attribute(mac_max_csma_backoffs),
+    ?assertEqual(2, NewMaxCSMABackoffs),
+    NewMinBE = ieee802154:get_pib_attribute(mac_min_BE),
+    ?assertEqual(1, NewMinBE).
 
 tx_invalid_address(_Config) ->
     FC = #frame_control{src_addr_mode = ?NONE, dest_addr_mode = ?NONE},

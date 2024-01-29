@@ -230,7 +230,7 @@ init(Params) ->
 
     Data = #{phy_layer => PhyMod,
              duty_cycle => DutyCycleState,
-             attributes => default_attribute_values(PhyMod),
+             attributes => default_attribute_values(),
              ranging => ?DISABLED,
              input_callback => Params#ieee_parameters.input_callback},
     {ok, Data}.
@@ -298,8 +298,18 @@ handle_call({set, Attribute, Value}, _From, State) ->
         {error, Error} ->
             {reply, {error, Error}, State}
     end;
-handle_call({reset, SetDefaultPIB}, _From, #{phy_layer := PhyMod} = State) ->
-    {reply, ok, State#{attibutes => default_attribute_values(PhyMod)}};
+handle_call({reset, SetDefaultPIB}, _From, State) ->
+    #{phy_layer := PhyMod, duty_cycle := DCState} = State,
+    NewState = case SetDefaultPIB of
+                   true ->
+                       PhyMod:write(panadr, #{pan_id => <<16#FFFF:16>>,
+                                              short_addr => <<16#FFFF:16>>}),
+                       State#{attributes => default_attribute_values()};
+                   _ ->
+                       State
+               end,
+    NewDCState = gen_duty_cycle:turn_off(DCState),
+    {reply, ok, NewState#{duty_cycle => NewDCState, ranging => ?DISABLED}};
 handle_call(_Request, _From, _State) ->
     error(call_not_recognized).
 
@@ -318,25 +328,21 @@ write_default_conf(PhyMod) ->
                             autoack => 1,
                             rxwtoe => 1}).
 
--spec default_attribute_values(PhyMod) -> Attributes when
-      PhyMod     :: module(),
-      Attributes :: #{cw0 := 2,
+-spec default_attribute_values() -> Attributes when
+      Attributes   :: #{cw0 := 2,
                       mac_max_BE := 5,
                       mac_max_csma_backoffs := 4,
                       mac_min_BE := 3,
                       mac_pan_id := <<_:16>>,
                       mac_short_address := <<_:16>>}.
-default_attribute_values(PhyMod) ->
-    % Reading default values on pmod.
-    % Either default: 0xFFFF or value stored on ROM
-    #{pan_id := PanID, short_addr := ShortAddr} = PhyMod:read(panadr),
+default_attribute_values() ->
     #{
       cw0 => 2, % cf. p.22 standard
       mac_max_BE => 5,
       mac_max_csma_backoffs => 4,
       mac_min_BE => 3,
-      mac_pan_id => PanID,
-      mac_short_address => ShortAddr
+      mac_pan_id => <<16#FFFF:16>>,
+      mac_short_address => <<16#FFFF:16>>
      }.
 
 -spec get_csma_params(Attributes) -> CsmaParams when
