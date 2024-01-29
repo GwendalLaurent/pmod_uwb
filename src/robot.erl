@@ -105,8 +105,8 @@ jammer(N) ->
     jammer(N-1).
 
 tx_benchmark() ->
-    ieee802154:set_pan_id(?PANID),
-    ieee802154:set_mac_short_address(?SENDER_ADDR),
+    ieee802154:set_pib_attribute(mac_pan_id, ?PANID),
+    ieee802154:set_pib_attribute(mac_short_address, ?SENDER_ADDR),
     pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     NbrFrames = 100,
     % NbrFrames = 1000,
@@ -120,8 +120,8 @@ tx_benchmark() ->
     io:format("----------------------------------------------~n").
 
 rx_benchmark() ->
-    ieee802154:set_pan_id(?PANID),
-    ieee802154:set_mac_short_address(?RECEIVER_ADDR),
+    ieee802154:set_pib_attribute(mac_pan_id, ?PANID),
+    ieee802154:set_pib_attribute(mac_short_address, ?RECEIVER_ADDR),
     % rx().
     ieee802154:rx_on().
 
@@ -143,8 +143,8 @@ start(_Type, _Args) ->
     {ok, PanId} = application:get_env(robot, pan_id),
     {ok, MacAddr} = application:get_env(robot, mac_addr),
     io:format("Env: ~p~n", [application:get_all_env()]),
-    ieee802154:set_pan_id(PanId),
-    ieee802154:set_mac_short_address(MacAddr),
+    ieee802154:set_pib_attribute(mac_pan_id, PanId),
+    ieee802154:set_pib_attribute(mac_short_address, MacAddr),
 
     double_sided_3_msg:start_link(),
     ieee802154:rx_on(?ENABLED),

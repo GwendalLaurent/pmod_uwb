@@ -76,17 +76,17 @@ get_set_mac_extended_addr(_Config) ->
 
 get_set_mac_short_addr(_Config) ->
     ShortAddr = <<16#CAFE:16>>,
-    DefaultValue = ieee802154:get_mac_short_address(),
-    ieee802154:set_mac_short_address(ShortAddr),
-    NewValue = ieee802154:get_mac_short_address(),
+    DefaultValue = ieee802154:get_pib_attribute(mac_short_address),
+    ieee802154:set_pib_attribute(mac_short_address, ShortAddr),
+    NewValue = ieee802154:get_pib_attribute(mac_short_address),
     ?assertEqual(ShortAddr, NewValue),
     ?assertNotEqual(ShortAddr, DefaultValue).
 
 get_set_pan_id(_Config) ->
     PanId = <<16#ABCD:16>>,
-    DefaultValue = ieee802154:get_pan_id(),
-    ieee802154:set_pan_id(PanId),
-    NewValue = ieee802154:get_pan_id(),
+    DefaultValue = ieee802154:get_pib_attribute(mac_pan_id),
+    ieee802154:set_pib_attribute(mac_pan_id, PanId),
+    NewValue = ieee802154:get_pib_attribute(mac_pan_id),
     ?assertEqual(PanId, NewValue),
     ?assertNotEqual(PanId, DefaultValue).
 

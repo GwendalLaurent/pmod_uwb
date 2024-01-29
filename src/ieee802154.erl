@@ -19,13 +19,11 @@
 
 -export([get_mac_extended_address/0]).
 -export([set_mac_extended_address/1]).
--export([get_mac_short_address/0]).
--export([set_mac_short_address/1]).
--export([get_pan_id/0]).
--export([set_pan_id/1]).
 
 -export([get_pib_attribute/1]).
 -export([set_pib_attribute/2]).
+
+-export([reset/1]).
 
 % gen_server callbacks
 -export([init/1]).
@@ -42,13 +40,19 @@
 -include("mac_frame.hrl").
 
 %--- Types ---------------------------------------------------------------------
--type pib_attribute() :: cw0 | mac_max_BE | mac_min_BE | mac_max_csma_backoffs.
+-type pib_attribute() :: cw0
+                       | mac_max_BE
+                       | mac_min_BE
+                       | mac_max_csma_backoffs
+                       | mac_pan_id
+                       | mac_short_address.
 
 -type pib_attributes() :: #{cw0 := cw0(),
                             mac_max_BE := mac_max_BE(),
                             mac_min_BE := mac_max_BE(),
                             mac_max_csma_backoffs := mac_max_csma_backoff(),
-                            _ => _}.
+                            mac_pan_id := mac_pan_id(),
+                            mac_short_address := mac_short_address()}.
 
 -type pib_set_error() :: read_only | unsupported_attribute | invalid_parameter.
 
@@ -177,42 +181,20 @@ rx_on(Ranging) ->
 rx_off() ->
     gen_server:call(?MODULE, {rx_off}).
 
-%% @doc Gets the extended address of the device stored in the PIB
+%% @doc Gets the extended address of the device
 %% The function returns the address as a bitstring
 -spec get_mac_extended_address() -> bitstring().
 get_mac_extended_address() ->
     gen_server:call(?MODULE, {get, mac_extended_address}).
 
-%% @doc Sets the mac extended address of the device and update the PIB
+%% @doc Sets the mac extended address of the device
 %% The Value is a bitstring with a size of 64 bits
 -spec set_mac_extended_address(Value::bitstring()) -> ok.
 set_mac_extended_address(Value) ->
     gen_server:call(?MODULE, {set, mac_extended_address, Value}).
 
-%% @doc Gets the short address of the device stored in the PIB
-%% The function returns the address as a bitstring
--spec get_mac_short_address() -> bitstring().
-get_mac_short_address() ->
-    gen_server:call(?MODULE, {get, mac_short_address}).
-
-%% @doc Sets the mac short address of the device and update the PIB
-%% The Value is a bitstring with a size of 16 bits
--spec set_mac_short_address(Value::bitstring()) -> ok.
-set_mac_short_address(Value) ->
-    gen_server:call(?MODULE, {set, mac_short_address, Value}).
-
-%% @doc Gets the PAN ID of the device stored in the PIB
-%% The function returns the PAN ID as a bitstring
--spec get_pan_id() -> bitstring().
-get_pan_id() ->
-    gen_server:call(?MODULE, {get, mac_pan_id}).
-
-%% @doc Sets the PAN ID of the device and update the PIB
-%% The Value is a bitstring with a size of 16 bits
--spec set_pan_id(bitstring()) -> ok.
-set_pan_id(Value) ->
-    gen_server:call(?MODULE, {set, mac_pan_id, Value}).
-
+%% @doc Get the value of a PIB attribute
+%% @end
 -spec get_pib_attribute(Attribute) -> Value when
       Attribute :: pib_attribute(),
       Value     :: term().
@@ -220,11 +202,19 @@ get_pib_attribute(Attribute) ->
     gen_server:call(?MODULE, {get, Attribute}).
 
 
+%% @doc Set the value of a PIB attribute
+%% @end
 -spec set_pib_attribute(Attribute, Value) -> ok when
       Attribute :: pib_attribute(),
       Value     :: term().
 set_pib_attribute(Attribute, Value) ->
     gen_server:call(?MODULE, {set, Attribute, Value}).
+
+-spec reset(SetDefaultPIB) -> Result when
+      SetDefaultPIB :: boolean(),
+      Result :: ok.
+reset(SetDefaultPIB) ->
+    gen_server:call(?MODULE, {reset, SetDefaultPIB}).
 
 %--- gen_statem callbacks ------------------------------------------------------
 
@@ -240,7 +230,7 @@ init(Params) ->
 
     Data = #{phy_layer => PhyMod,
              duty_cycle => DutyCycleState,
-             attributes => default_attribute_values(),
+             attributes => default_attribute_values(PhyMod),
              ranging => ?DISABLED,
              input_callback => Params#ieee_parameters.input_callback},
     {ok, Data}.
@@ -308,6 +298,8 @@ handle_call({set, Attribute, Value}, _From, State) ->
         {error, Error} ->
             {reply, {error, Error}, State}
     end;
+handle_call({reset, SetDefaultPIB}, _From, #{phy_layer := PhyMod} = State) ->
+    {reply, ok, State#{attibutes => default_attribute_values(PhyMod)}};
 handle_call(_Request, _From, _State) ->
     error(call_not_recognized).
 
@@ -326,17 +318,25 @@ write_default_conf(PhyMod) ->
                             autoack => 1,
                             rxwtoe => 1}).
 
--spec default_attribute_values() -> Attributes when
+-spec default_attribute_values(PhyMod) -> Attributes when
+      PhyMod     :: module(),
       Attributes :: #{cw0 := 2,
                       mac_max_BE := 5,
                       mac_max_csma_backoffs := 4,
-                      mac_min_BE := 3}.
-default_attribute_values() ->
+                      mac_min_BE := 3,
+                      mac_pan_id := <<_:16>>,
+                      mac_short_address := <<_:16>>}.
+default_attribute_values(PhyMod) ->
+    % Reading default values on pmod.
+    % Either default: 0xFFFF or value stored on ROM
+    #{pan_id := PanID, short_addr := ShortAddr} = PhyMod:read(panadr),
     #{
       cw0 => 2, % cf. p.22 standard
       mac_max_BE => 5,
       mac_max_csma_backoffs => 4,
-      mac_min_BE => 3
+      mac_min_BE => 3,
+      mac_pan_id => PanID,
+      mac_short_address => ShortAddr
      }.
 
 -spec get_csma_params(Attributes) -> CsmaParams when
@@ -359,12 +359,6 @@ get_csma_params(Attributes) ->
 get(PhyMod, _Attributes, mac_extended_address) ->
     #{eui := EUI} = PhyMod:read(eui),
     {ok, EUI};
-get(PhyMod, _Attributes, mac_short_address) ->
-    #{short_addr := ShortAddr} = PhyMod:read(panadr),
-    {ok, ShortAddr};
-get(PhyMod, _Attributes, mac_pan_id) ->
-    #{pan_id := PanId} = PhyMod:read(panadr),
-    {ok, PanId};
 get(_PhyMod, Attributes, Attribute) when is_map_key(Attribute, Attributes) ->
     {ok, maps:get(Attribute, Attributes)};
 get(_, _, _) ->
@@ -383,10 +377,10 @@ set(PhyMod, Attributes, mac_extended_address, Value) ->
     {ok, Attributes};
 set(PhyMod, Attributes, mac_short_address, Value) ->
     PhyMod:write(panadr, #{short_addr => Value}),
-    {ok, Attributes};
+    {ok, Attributes#{mac_short_address => Value}};
 set(PhyMod, Attributes, mac_pan_id, Value) ->
     PhyMod:write(panadr, #{pan_id => Value}),
-    {ok, Attributes};
+    {ok, Attributes#{mac_pan_id => Value}};
 set(_, Attributes, Attribute, Value) when is_map_key(Attribute, Attributes) ->
     NewAttributes = maps:update(Attribute, Value, Attributes),
     {ok, NewAttributes};

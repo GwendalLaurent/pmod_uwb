@@ -52,6 +52,8 @@
 -type mac_max_BE() :: 3..8.
 -type mac_max_csma_backoff() :: 0..5.
 -type mac_min_BE() :: 0..8.
+-type mac_pan_id() :: <<_:16>>.
+-type mac_short_address() :: <<_:16>>.
 
 -type ranging_received() :: ?NO_RANGING_REQUESTED | ?RANGING_REQUESTED_BUT_NOT_SUPPORTED | ?RANGING_ACTIVE.
 -type ranging_tx() :: ?NON_RANGING | ?ALL_RANGING. % PHY_HEADER_ONLY no used in our case

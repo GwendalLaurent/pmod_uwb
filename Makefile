@@ -18,3 +18,9 @@ compile:
 
 make: mount compile
 	rebar3 grisp deploy
+
+dialyzer:
+	rebar3 dialyzer -u -s
+
+test:
+	rebar3 ct --sname test
