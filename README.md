@@ -41,10 +41,14 @@ Robot Example
 -------------
 
 ```erlang
-start(_Type, _Args) -> 
+start(_Type, _Args) ->
+    Callback = fun(Frame, LQI, Security, Ranging) ->
+                    {FrameControl, MacHeader, Payload} = Frame,
+                    io:format("~p~n", [Payload])
+                end,
     {ok, Supervisor} = robot_sup:start_link(),
     grisp:add_device(spi2, pmod_uwb), % Starts the driver for the pmod
-    ieee802154:start_link(#{mac_layer => mac_layer}), % Create the IEEE 802.15.4 stack
+    ieee802154:start_link(#ieee_parameters{phy_layer = pmod_uwb, callback = Callback}), % Create the IEEE 802.15.4 stack
     {ok, Supervisor}.
 ```
 
@@ -53,15 +57,13 @@ Simple transmission function
 tx() ->
     FrameControl = #frame_control{}, % default frame control
     MacHeader = #mac_header{}, % default frame control
-    ieee802154:transmition(FrameControl, MacHeader, <<"Test">>). % 
+    {ok, _} = ieee802154:transmition(FrameControl, MacHeader, <<"Test">>).
 ```
 
-Simple reception function
+To activate the continuous reception without enabling ranging:
 ```erlang
-rx() ->
-    ieee802154:reception().
+ieee802154:rx_on(?DISABLED).
 ```
-
 IEEE 802.15.4 stack structure
 -----------------------------
 <p align="center">
@@ -75,23 +77,14 @@ The following subsections gives an indication of the roles and responsabilities 
 
 ### ieee802154.erl
 
-* <u>Role</u>: Entry point for the API of the IEEE 802.15.4 stack
-* <u>Responsabilities</u>: Keep the state of all the child modules in memory
-
-Interaction with the IEEE 802.15.4 stack has to be done through this module.
-
-### gen_mac_layer.erl
-
-This is a custom behaviour module.
-
 * <u>Role</u>: 
+    * Entry point for the API of the IEEE 802.15.4 stack
     * Encoding and decoding of the MAC frames (using the module `mac_frames.erl`)
     * Managing the *PIB* of the mac sublayer
     * Implementing the *MLME* and *MPDU* primitives
+* <u>Responsabilities</u>: Keep the state of all the child modules in memory
 
-Modules implementing the behaviour:
-* `mac_layer.erl`: The module that has to be used in normal working conditions
-* `mock_mac.erl`: Mock module used to test the API of the IEEE 802.15.4 stack
+Interaction with the IEEE 802.15.4 stack has to be done through this module.
 
 ### gen_duty_cycle
 
