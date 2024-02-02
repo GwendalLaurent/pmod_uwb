@@ -11,15 +11,16 @@
 
 
 %--- Types ---------------------------------------------------------------------
--export_type([ftype/0, addr_mode/0, addr/0, frame/0]).
+-export_type([ftype/0, addr_mode/0, addr/0, frame/0, beacon_metadatas/0]).
 -type ftype() :: ?FTYPE_BEACON | ?FTYPE_DATA | ?FTYPE_ACK | ?FTYPE_MACCOM.
 -type addr_mode() :: ?NONE | ?SHORT_ADDR | ?EXTENDED.
 -type addr() :: bitstring().
 
 -type frame() :: {frame_control(), mac_header(), bitstring()}.
 
+-type beacon_metadatas() :: {superframe_specs(), gts_fields(), pending_addr_flds()}.
 %--- Records -------------------------------------------------------------------
--export_type([frame_control/0, mac_header/0]).
+-export_type([frame_control/0, mac_header/0, superframe_specs/0, gts_fields/0, gts_descr/0]).
 
 % @doc frame control of a MAC header for IEEE 802.15.4
 -record(frame_control, {frame_type = ?FTYPE_DATA :: ftype(),
@@ -42,3 +43,32 @@
                      src_addr = <<16#FFFF:16>> :: addr()}).
 
 -type mac_header() :: #mac_header{}.
+
+-record(superframe_specs, {beacon_order     :: integer(),
+                           superframe_order :: integer(),
+                           final_cap_slot   :: integer(),
+                           ble              :: boolean(),
+                           pan_coord        :: boolean(),
+                           association_perm :: boolean()}).
+
+-type superframe_specs() :: #superframe_specs{}.
+
+-record(gts_descr, {short_addr    :: <<_:16>>,
+                    starting_slot :: non_neg_integer(),
+                    gts_length    :: non_neg_integer()}).
+
+-type gts_descr() :: #gts_descr{}.
+
+-record(gts_fields, {gts_descr_cnt :: integer(),
+                     gts_permit    :: boolean(),
+                     gts_direction  :: bitstring(),
+                     gts_descr_list :: [gts_descr()]}).
+
+-type gts_fields() :: #gts_fields{}. 
+
+-record(pending_addr_flds, {nbr_short_addr_pending :: non_neg_integer(),
+                              nbr_ext_addr_pending   :: non_neg_integer(),
+                              short_addr_pending     :: [<<_:16>>],
+                              ext_addr_pending       :: [<<_:64>>]}). % TODO
+
+-type pending_addr_flds() :: #pending_addr_flds{}.
