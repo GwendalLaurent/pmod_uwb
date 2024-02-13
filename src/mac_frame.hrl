@@ -44,6 +44,7 @@
 
 -type mac_header() :: #mac_header{}.
 
+% Sec. 5.2.2.1.2 p.62
 -record(superframe_specs, {beacon_order     :: integer(),
                            superframe_order :: integer(),
                            final_cap_slot   :: integer(),

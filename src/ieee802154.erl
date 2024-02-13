@@ -346,7 +346,7 @@ teardown_scan(Type, Attributes, RXFWTO, PhyMod) when Type == active
                             ffen => 1,
                             autoack => 0,
                             rxwtoe => 1}),
-    PanId = get(PhyMod, Attributes, mac_pan_id),
+    {ok, PanId} = get(PhyMod, Attributes, mac_pan_id),
     PhyMod:write(panadr, #{pan_id => PanId}),
     PhyMod:write(rx_fwto, #{rxfwto => RXFWTO});
 teardown_scan(_, _, _, _) ->
@@ -357,7 +357,7 @@ teardown_scan(_, _, _, _) ->
       Type     :: scan_type(),
       Channels :: [channel()],
       Security :: security(),
-      Acc      :: [pan_descr()] | [integer()], % Is it going to work even for ed scans ?
+      Acc      :: [pan_descr()] | [integer()],
       Result   :: {scan_status(), state(), scan_result()}.
 scan_channels(State, _, [], _, []) ->
     {no_beacon, State, #scan_result{}};
@@ -428,7 +428,7 @@ receive_beacon({ok, State}, Channel, PreambleCodes) ->
         {ok, NewDCState, Frame} ->
             PanDesc = pan_descr(Frame, Channel, 0, PreambleCodes),
             {ok, State#{duty_cycle => NewDCState}, PanDesc};
-        {error, NewDCState, rxfwto} ->
+        {error, NewDCState, rxrfto} ->
             {ok, State#{duty_cycle => NewDCState}, empty};
         {error, _NewDCState, Error} ->
             error(unexpected_rx_error, [Error]) % ! Might have other t.o., how should it be handled ?
