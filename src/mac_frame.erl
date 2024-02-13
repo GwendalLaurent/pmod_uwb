@@ -71,6 +71,8 @@ decode(Data) ->
     FrameControl = decode_frame_control(FC),
     decode_rest(FrameControl, Seqnum, Rest).
 
+% @todo check the bit order of each fields
+% @todo docs
 -spec decode_beacon(Data) -> Result when
       Data          :: binary(),
       Result        :: {FrameControl, MacHeader, Metadatas, BeaconPayload}
@@ -82,6 +84,7 @@ decode(Data) ->
 decode_beacon(Data) ->
     {FrameControl, MacHeader, Payload} = decode(Data),
 
+    ct:log("Payload size: ~w bits ~n", [bit_size(Payload)]),
     case decode_beacon_metadatas(Payload) of
         {ok, Metadatas, BeaconPayload} -> {FrameControl,
                                            MacHeader,
@@ -98,10 +101,11 @@ decode_beacon(Data) ->
       Gts             :: gts_fields(),
       PendAddr        :: pending_addr_flds(),
       BeaconPayload   :: binary().
-decode_beacon_metadatas(Payload) when byte_size(Payload) < 32 ->
+decode_beacon_metadatas(Payload) when bit_size(Payload) < 32 ->
     {error, malformed};
 decode_beacon_metadatas(Payload) ->
     <<RawSpecs:16/bitstring, Left/bitstring>> = Payload,
+    ct:log("Left size: ~w bits~n", [bit_size(Left)]),
     Specs = superframe_specs(RawSpecs),
     % Next 2 lines are buggy if malfored fields TOFIX
     {GTSFlds, LeftWithPendAddr} = gts(Left),
@@ -112,13 +116,13 @@ decode_beacon_metadatas(Payload) ->
 -spec superframe_specs(RawSpecs) -> superframe_specs() when
       RawSpecs :: <<_:16>>.
 superframe_specs(RawSpecs) ->
-    <<BeacOrd:4,
-      SupOrd:4,
-      FinalCAPSlot:4,
-      BLE:1,
-      _:1,
+    <<AssoPerm:1,
       PanCoord:1,
-      AssoPerm:1>> = RawSpecs,
+      _:1,
+      BLE:1,
+      FinalCAPSlot:4,
+      SupOrd:4,
+      BeacOrd:4>> = RawSpecs,
     #superframe_specs{beacon_order = BeacOrd,
                       superframe_order = SupOrd,
                       final_cap_slot = FinalCAPSlot,
@@ -129,17 +133,18 @@ superframe_specs(RawSpecs) ->
 % @TODO what happens if we don't have the exact amount of descr ?
 -spec gts(binary()) -> {gts_fields(), binary()}.
 gts(LeftoverPayload) ->
-    <<GTSDescCnt:3/integer,
+      <<GTSPermit:1,
       _:4,
-      GTSPermit:1,
+      GTSDescCnt:3/integer,
       Rest/bitstring>> = LeftoverPayload,
 
+    ct:log("Rest size: ~w bits~n", [bit_size(Rest)]),
+    ct:log("GTS descriptor count: ~w~n", [GTSDescCnt]),
     {GTSDirection, Descriptors, Left} = gts_fields(GTSDescCnt, Rest),
-    {Descriptors, Left} = get_gts_descriptors(GTSDescCnt, Rest, []),
     GTSFields = #gts_fields{gts_descr_cnt = GTSDescCnt,
                             gts_permit = to_bool(GTSPermit),
                             gts_direction = GTSDirection,
-                            gts_descr_list = Descriptors},
+                            gts_descr_list = lists:reverse(Descriptors)},
     {GTSFields, Left}.
 
 -spec gts_fields(GTSDescCnt, Leftover) -> Result when
@@ -165,9 +170,9 @@ gts_fields(GtsDescCnt, Leftover) ->
 get_gts_descriptors(0, Leftover, Acc) ->
     {Acc, Leftover};
 get_gts_descriptors(DescLeft, Leftover, Acc) ->
-    <<ShortAddr:16/bitstring,
+    <<Length:4/integer,
       StartingSlot:4/integer,
-      Length:4/integer,
+      ShortAddr:16/bitstring,
       Rest/bitstring>> = Leftover,
     Descr = #gts_descr{short_addr = ShortAddr,
                        starting_slot = StartingSlot,
@@ -179,14 +184,15 @@ get_gts_descriptors(DescLeft, Leftover, Acc) ->
       Leftover :: <<_:8, _:_*8>>,
       Rest     :: binary().
 pending_addr(Leftover) ->
-    <<NbrShort:3/integer, _:1,
-      NbrExt:3/integer, _:1,
+    ct:log("Leftover size: ~w bits ~n", [bit_size(Leftover)]),
+    <<_:1, NbrExt:3/integer,
+      _:1, NbrShort:3/integer,
       Left/bitstring>> = Leftover,
     {ShortAddrs, ExtAddrs, Rest} = get_addrs(NbrShort, NbrExt, Left, {[], []}),
     {#pending_addr_flds{nbr_short_addr_pending = NbrShort,
                          nbr_ext_addr_pending = NbrExt,
-                         short_addr_pending = ShortAddrs,
-                         ext_addr_pending = ExtAddrs},
+                         short_addr_pending = lists:reverse(ShortAddrs),
+                         ext_addr_pending = lists:reverse(ExtAddrs)},
      Rest}.
 
 -spec get_addrs(NbrShrAddr, NbrExtAddr, Left, Acc) -> Result when
@@ -295,11 +301,17 @@ decode_mac_header(?SHORT_ADDR, ?SHORT_ADDR, ?ENABLED, <<DestPAN:16/bitstring, De
 decode_mac_header(?SHORT_ADDR, ?NONE, _, <<DestPAN:16/bitstring, DestAddr:16/bitstring, Payload/bitstring>>) ->
     {DestPAN, DestAddr, <<>>, <<>>, Payload};
 
-decode_mac_header(?NONE, ?EXTENDED, _, <<SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
+decode_mac_header(?NONE, ?EXTENDED, ?DISABLED, <<SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
     {<<>>, <<>>, SrcPAN, SrcAddr, Payload};
 
-decode_mac_header(?NONE, ?SHORT_ADDR, _, <<SrcPAN:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+decode_mac_header(?NONE, ?EXTENDED, ?ENABLED, <<SrcPAN:16/bitstring, SrcAddr:64/bitstring, Payload/bitstring>>) ->
+    {SrcPAN, <<>>, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(?NONE, ?SHORT_ADDR, ?DISABLED, <<SrcPAN:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
     {<<>>, <<>>, SrcPAN, SrcAddr, Payload};
+
+decode_mac_header(?NONE, ?SHORT_ADDR, ?ENABLED, <<SrcPAN:16/bitstring, SrcAddr:16/bitstring, Payload/bitstring>>) ->
+    {SrcPAN, <<>>, SrcPAN, SrcAddr, Payload};
 
 decode_mac_header(_SrcAddrMode, _DestAddrMode, _PanIdCompr, _Bits) ->
     error(internal_decoding_error).
