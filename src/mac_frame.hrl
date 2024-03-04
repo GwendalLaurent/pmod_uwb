@@ -11,7 +11,7 @@
 
 
 %--- Types ---------------------------------------------------------------------
--export_type([ftype/0, addr_mode/0, addr/0, frame/0, beacon_metadatas/0]).
+-export_type([ftype/0, addr_mode/0, addr/0, frame/0, beacon_metadatas/0, decode_error/0]).
 -type ftype() :: ?FTYPE_BEACON | ?FTYPE_DATA | ?FTYPE_ACK | ?FTYPE_MACCOM.
 -type addr_mode() :: ?NONE | ?SHORT_ADDR | ?EXTENDED.
 -type addr() :: bitstring().
@@ -19,6 +19,7 @@
 -type frame() :: {frame_control(), mac_header(), bitstring()}.
 
 -type beacon_metadatas() :: {superframe_specs(), gts_fields(), pending_addr_flds()}.
+-type decode_error() :: malformed | malformed_gts | malformed_pend_addr.
 %--- Records -------------------------------------------------------------------
 -export_type([frame_control/0, mac_header/0, superframe_specs/0, gts_fields/0, gts_descr/0]).
 

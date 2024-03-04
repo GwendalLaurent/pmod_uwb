@@ -442,7 +442,7 @@ receive_beacon({error, State}, _, _) ->
       Timestamp     :: non_neg_integer(),
       PreambleCodes :: [preamble_code()].
 pan_descr(Frame, ChannelNbr, Timestamp, PreambleCodes) ->
-    {FC, MH, Metadatas, _BeaconPayload} = mac_frame:decode_beacon(Frame),
+    {FC, MH, {Metadatas, _BeaconPayload}} = mac_frame:decode(Frame),
     {SuperframeSpecs, GTSFields, _} = Metadatas,
     #pan_descr{coord_addr_mode = FC#frame_control.src_addr_mode,
                coord_pan_id = MH#mac_header.src_pan,
