@@ -43,6 +43,9 @@
 -export([ed_beacon_only_pend_addr/1]).
 
 -export([decode_beacon_malformed_too_short/1]).
+-export([decode_beacon_malformed_not_enough_GTS/1]).
+-export([decode_beacon_malformed_not_enough_addr/1]).
+-export([decode_beacon_malformed_no_pend_addr_flds/1]).
 
 %--- Dialyzer ------------------------------------------------------------------
 -compile({nowarn_unused_function, [debug_bitstring_hex/1]}).
@@ -79,23 +82,27 @@ groups() -> [{encode_decode_mac_data, [parallel], [
                 ed_beacon_gts_and_pend_addr,
                 ed_beacon_only_gts,
                 ed_beacon_only_pend_addr,
-                decode_beacon_malformed_too_short
+                decode_beacon_malformed_too_short,
+                decode_beacon_malformed_not_enough_GTS,
+                decode_beacon_malformed_not_enough_addr,
+                decode_beacon_malformed_no_pend_addr_flds
                 ]}].
 
 init_per_group(encode_decode_mac_beacon, Config) ->
     ExpectedFC = #frame_control{frame_type = ?FTYPE_BEACON,
                                 dest_addr_mode = ?NONE,
-                                src_addr_mode = ?EXTENDED,
+                                src_addr_mode = ?SHORT_ADDR,
                                 pan_id_compr = ?DISABLED,
                                 ack_req = ?DISABLED,
                                 sec_en = ?DISABLED},
     ExpectedMH = #mac_header{seqnum = 0,
-                             src_addr = <<16#DECACAFE00000001:64>>,
-                             src_pan = <<16#FFFF:16>>,
+                             src_addr = <<16#0001:16>>,
+                             src_pan = <<16#DECA:16>>,
                              dest_pan = <<>>,
                              dest_addr = <<>>},
-    MHR = <<16#00C000FFFF01000000FECACADE:104>>,
-    [{fc, ExpectedFC}, {mh, ExpectedMH}, {mhr, MHR}, {payload, <<>>} | Config];
+    MHR = <<16#008000CADE0100:56>>,
+    MHRSize = bit_size(MHR),
+    [{fc, ExpectedFC}, {mh, ExpectedMH}, {mhr, {MHR, MHRSize}}, {payload, <<>>} | Config];
 init_per_group(_, Config) ->
     Config.
 
@@ -126,9 +133,13 @@ decode_mac_message(_Config) ->
 
 decode_mac_message_uncompressed_pan_id(_Config) ->
     Message = <<16#2188:16, 0:8, 16#CADE:16, "XR", 16#CADE:16, "XT", "Hello">>,
-    FrameControl = #frame_control{ack_req = ?ENABLED, frame_version = 2#00},
-    MacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
-    {FrameControl, MacHeader, <<"Hello">>} = mac_frame:decode(Message).
+    ExpectedFrameControl = #frame_control{ack_req = ?ENABLED, frame_version = 2#00},
+    ExpectedMacHeader = #mac_header{seqnum = 0, dest_pan = <<16#DECA:16>>, dest_addr = <<"RX">>, src_pan = <<16#DECA:16>>, src_addr = <<"TX">>},
+    ExpectedPayload = <<"Hello">>,
+    {FrameControl, MacHeader, Payload} = mac_frame:decode(Message),
+    ?assertEqual(ExpectedFrameControl, FrameControl),
+    ?assertEqual(ExpectedMacHeader, MacHeader),
+    ?assertEqual(ExpectedPayload, Payload).
 
 decode_ack_frame_from_device(_Config) ->
     Message = <<16#0200:16, 50:8>>,
@@ -278,29 +289,11 @@ encode_decode_invalid_header_fields_value(_Config) ->
     ok.
 
 %--- Test cases: encode_decode_mac_beacon --------------------------------------
-% Test I Should add:
-% [x] - Beacon with empty fields (no GTS and no pending addr)
-% [x] - Beacon with GTS and pending addr
-%       [x] - Multiple GTS & pending addr
-%       [x] - Multiple GTS but no pending addr
-%       [x] - Multiple pend addr but no GTS
-% [x] - Malformed beacon (not enough minimal bits)
-% [ ] - Malformed beacon (The number of GTS fields doesn't match the one specified
-% [ ] - Malformed beacon (The number of pending addr doesn't match the one specified
-% [ ] - Probably other malformed beacons are possible
-
 ed_beacon_empty_fields(Config) ->
-    % TODO encoding test
-    MHR = ?config(mhr, Config),
+    {MHR, MHRSize} = ?config(mhr, Config),
     {ExpectedFC, ExpectedMH, ExpectedPayload} = get_expected_mac_struct(Config),
-    % Payload:
-    % * Beacon order: 15; Superframe order: 15; CAP final slot: 0; BLE: false; PAN coord: true; Ass. perm.: true
-    % * GTS fields: all set to zero and rest is null
-    % * Pending addresses set to zero
     MacPayload = <<16#C0FF0000:32>>,
-    Data = <<MHR:104/bitstring, MacPayload:32/bitstring>>,
-    {FC, MH, Metadatas, BeaconPayload} = mac_frame:decode_beacon(Data),
-    {SuperFrameSpecs, GTSFields, PendAddr} = Metadatas,
+    ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:32/bitstring>>,
     ExpectedSFrameSpecs = #superframe_specs{beacon_order = 15,
                                             superframe_order = 15,
                                             final_cap_slot = 0,
@@ -315,14 +308,19 @@ ed_beacon_empty_fields(Config) ->
                                           nbr_ext_addr_pending = 0,
                                           short_addr_pending = [],
                                           ext_addr_pending = []},
+    ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
+
+    Data = mac_frame:encode_beacon(ExpectedFC, ExpectedMH, ExpectedBeaconFields),
+    ?assertEqual(ExpectedData, Data),
+
+    {FC, MH, {Metadatas, BeaconPayload}} = mac_frame:decode(Data),
+    {SuperFrameSpecs, GTSFields, PendAddr} = Metadatas,
     Expected = {ExpectedFC, ExpectedMH, ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
     Actual = {FC, MH, SuperFrameSpecs, GTSFields, PendAddr, BeaconPayload},
-    beacon_check_actual_against_expected(Expected, Actual),
-    mac_frame:encode_beacon(MHR, Metadatas, BeaconPayload).
+    beacon_check_actual_against_expected(Expected, Actual).
 
 ed_beacon_gts_and_pend_addr(Config) ->
-    % TODO encoding test
-    MHR = ?config(mhr, Config),
+    {MHR, MHRSize} = ?config(mhr, Config),
     {ExpectedFC, ExpectedMH, ExpectedPayload} = get_expected_mac_struct(Config),
     ExpectedSFrameSpecs = #superframe_specs{beacon_order = 14,
                                             superframe_order = 13,
@@ -344,21 +342,21 @@ ed_beacon_gts_and_pend_addr(Config) ->
                                           short_addr_pending = [<<16#0003:16>>],
                                           nbr_ext_addr_pending = 0,
                                           ext_addr_pending = []},
-    % Payload:
-    % * Beacon order: 14; Superframe order: 13; CAP final: 11; BLE: false; PAN coord: true; Ass. perm.: true
-    % * GTS fields: desc. cnt.: 2; GTS perm: true; direction: all tx only; 2 addresses 0x01 at slot 12 and 0x02 at slot 13 both of length 1
-    % * Pending addresses: 1 pending short address 0x03; no pending ext. addr.
     MacPayload = <<16#CBDE82001C00011D0002010003:104>>,
-    Data = <<MHR:104/bitstring, MacPayload:104/bitstring>>,
-    {FC, MH, Metadatas, BeaconPayload} = mac_frame:decode_beacon(Data),
+    ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:104/bitstring>>,
+    ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
+
+    Data = mac_frame:encode_beacon(ExpectedFC, ExpectedMH, ExpectedBeaconFields),
+    ?assertEqual(ExpectedData, Data),
+
+    {FC, MH, {Metadatas, BeaconPayload}} = mac_frame:decode(Data),
     {SuperFrameSpecs, GTSFields, PendAddr} = Metadatas,
     Expected = {ExpectedFC, ExpectedMH, ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
     Actual = {FC, MH, SuperFrameSpecs, GTSFields, PendAddr, BeaconPayload},
-    beacon_check_actual_against_expected(Expected, Actual),
-    mac_frame:encode_beacon(MHR, Metadatas, BeaconPayload).
+    beacon_check_actual_against_expected(Expected, Actual).
 
 ed_beacon_only_gts(Config) ->
-    MHR = ?config(mhr, Config),
+    {MHR, MHRSize} = ?config(mhr, Config),
     {ExpectedFC, ExpectedMH, ExpectedPayload} = get_expected_mac_struct(Config),
     ExpectedSFrameSpecs = #superframe_specs{beacon_order = 14,
                                             superframe_order = 13,
@@ -380,21 +378,21 @@ ed_beacon_only_gts(Config) ->
                                           short_addr_pending = [],
                                           nbr_ext_addr_pending = 0,
                                           ext_addr_pending = []},
-    % Payload:
-    % * Beacon order: 14; Superframe order: 13; CAP final: 11; BLE: false; PAN coord: true; Ass. perm.: true
-    % * GTS fields: desc. cnt.: 2; GTS perm: true; direction: all tx only; 2 addresses 0x01 at slot 12 and 0x02 at slot 13 both of length 1
-    % * Pending addresses: 1 pending short address 0x03; no pending ext. addr.
     MacPayload = <<16#CBDE82001C00011D000200:88>>,
-    Data = <<MHR:104/bitstring, MacPayload:88/bitstring>>,
-    {FC, MH, Metadatas, BeaconPayload} = mac_frame:decode_beacon(Data),
+    ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:88/bitstring>>,
+    ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
+
+    Data = mac_frame:encode_beacon(ExpectedFC, ExpectedMH, ExpectedBeaconFields),
+    ?assertEqual(ExpectedData, Data),
+
+    {FC, MH, {Metadatas, BeaconPayload}} = mac_frame:decode(Data),
     {SuperFrameSpecs, GTSFields, PendAddr} = Metadatas,
     Expected = {ExpectedFC, ExpectedMH, ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
     Actual = {FC, MH, SuperFrameSpecs, GTSFields, PendAddr, BeaconPayload},
-    beacon_check_actual_against_expected(Expected, Actual),
-    mac_frame:encode_beacon(MHR, Metadatas, BeaconPayload).
+    beacon_check_actual_against_expected(Expected, Actual).
 
 ed_beacon_only_pend_addr(Config) ->
-    MHR = ?config(mhr, Config),
+    {MHR, MHRSize} = ?config(mhr, Config),
     {ExpectedFC, ExpectedMH, ExpectedPayload} = get_expected_mac_struct(Config),
     ExpectedSFrameSpecs = #superframe_specs{beacon_order = 14,
                                             superframe_order = 13,
@@ -412,24 +410,50 @@ ed_beacon_only_pend_addr(Config) ->
                                           nbr_ext_addr_pending = 2,
                                           ext_addr_pending = [<<16#CAFEDECA00000001:64>>,
                                                               <<16#CAFEDECA00000002:64>>]},
-    % Payload:
-    % * Beacon order: 14; Superframe order: 13; CAP final: 11; BLE: false; PAN coord: true; Ass. perm.: true
-    % * GTS fields: desc. cnt.: 2; GTS perm: true; direction: all tx only; 2 addresses 0x01 at slot 12 and 0x02 at slot 13 both of length 1
-    % * Pending addresses: 1 pending short address 0x03; no pending ext. addr.
     MacPayload = <<16#CDDE802200010002CAFEDECA00000001CAFEDECA00000002:192>>,
-    Data = <<MHR:104/bitstring, MacPayload:192/bitstring>>,
-    {FC, MH, Metadatas, BeaconPayload} = mac_frame:decode_beacon(Data),
+    ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:192/bitstring>>,
+    ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
+
+    Data = mac_frame:encode_beacon(ExpectedFC, ExpectedMH, ExpectedBeaconFields),
+    ?assertEqual(ExpectedData, Data),
+
+    {FC, MH, {Metadatas, BeaconPayload}} = mac_frame:decode(Data),
     {SuperFrameSpecs, GTSFields, PendAddr} = Metadatas,
     Expected = {ExpectedFC, ExpectedMH, ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
     Actual = {FC, MH, SuperFrameSpecs, GTSFields, PendAddr, BeaconPayload},
     beacon_check_actual_against_expected(Expected, Actual).
 
 decode_beacon_malformed_too_short(Config) ->
-    MHR = ?config(mhr, Config),
+    {MHR, MHRSize} = ?config(mhr, Config),
     MacPayload = <<16#000:28>>,
-    Data = <<MHR:104/bitstring, MacPayload:28/bitstring>>,
-    ?assertEqual({error, malformed}, mac_frame:decode_beacon(Data)).
+    Data = <<MHR:MHRSize/bitstring, MacPayload:28/bitstring>>,
+    ?assertError(beacon_malformed, mac_frame:decode(Data)).
 
+decode_beacon_malformed_not_enough_GTS(Config) ->
+    {MHR, MHRSize} = ?config(mhr, Config),
+    
+    % Payload content:
+    % - GTS specs states that 2 GTS descriptors are present 
+    %   but only one is present
+    MacPayload = <<16#CBDE820010000200:64>>,
+    Data = <<MHR:MHRSize/bitstring, MacPayload:64/bitstring>>,
+    ?assertError(beacon_malformed, mac_frame:decode(Data)).
+
+decode_beacon_malformed_not_enough_addr(Config) ->
+    {MHR, MHRSize} = ?config(mhr, Config),
+    
+    % Payload content:
+    %   - Pending addresses states that 2 short addresses are pending
+    %   but only one is present
+    MacPayload = <<16#CEEE80020002:48>>,
+    Data = <<MHR:MHRSize/bitstring, MacPayload:48/bitstring>>,
+    ?assertError(beacon_malformed, mac_frame:decode(Data)).
+
+decode_beacon_malformed_no_pend_addr_flds(Config) ->
+    {MHR, MHRSize} = ?config(mhr, Config),
+    MacPayload = <<16#CDEE8100101000:56>>,
+    Data = <<MHR:MHRSize/bitstring, MacPayload:56/bitstring>>,
+    ?assertError(beacon_malformed, mac_frame:decode(Data)).
 
 %--- Utils ---------------------------------------------------------------------
 %% @doc get the expected FC, MH and Playload from the ones defined in the Config
@@ -440,7 +464,9 @@ get_expected_mac_struct(Config) ->
     {ExpectedFC, ExpectedMH, ExpectedPayload}.
 
 beacon_check_actual_against_expected(Expected, Actual) ->
-    {ExpectedFC, ExpectedMH, ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload} = Expected,
+    {ExpectedFC, ExpectedMH, 
+     ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, 
+     ExpectedPayload} = Expected,
     {FC, MH, SuperFrameSpecs, GTSFields, PendAddr, BeaconPayload} = Actual,
     ?assertEqual(ExpectedFC, FC),
     ?assertEqual(ExpectedMH, MH),
