@@ -2,7 +2,7 @@
 
 -module(ieee802154_node).
 
--export([boot_network_node/0, stop_network_node/2]).
+-export([boot_network_node/0, boot_network_node/1, stop_network_node/2]).
 -export([boot_ieee802154_node/4, stop_ieee802154_node/2]).
 -export([boot_ieee802154_node/5]).
 -export([boot_node/1]).
@@ -18,13 +18,17 @@
 -type mac_address_type() :: mac_short_address | mac_extended_address.
 -type mac_address() :: <<_:16>> | <<_:64>>.
 
+%% @equiv boot_network_node(#{}).
+-spec boot_network_node() -> node().
+boot_network_node() ->
+    boot_network_node(#{}).
+
 %% @doc Boot the network simulation node
 %% This node is necessary to simulate the real UWB physical network
 %% At startup, the mock_phy_network register themselves to the network to receive the tx frames
--spec boot_network_node() -> node().
-boot_network_node() ->
+boot_network_node(Args) ->
     {Pid, Network} = boot_node(network),
-    erpc:call(Network, network_simulation, start, [{}, {}]),
+    erpc:call(Network, network_simulation, start, [{}, Args]),
     ping_node(network_loop, Network),
     {Pid, Network}.
 
@@ -48,7 +52,7 @@ stop_network_node(Network, NetPid) ->
       AddressType :: mac_address_type(), 
       Address :: mac_address().
 boot_ieee802154_node(Name, Network, AddressType, Address) ->
-    boot_ieee802154_node(Name, Network, AddressType, Address, fun() -> ok end).
+    boot_ieee802154_node(Name, Network, AddressType, Address, fun(_, _, _, _) -> ok end).
 
 %% @doc Boots a node and initialize a IEEE 802.15.4 stack inside
 %% the stack will use the mock_phy_network to simulate communications over UWB

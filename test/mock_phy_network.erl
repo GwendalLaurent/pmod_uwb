@@ -165,13 +165,13 @@ handle_call({transmit, Frame, Options}, _From, #{network := NetworkNode} = State
     NewRegs = pmod_uwb_registers:update_reg(Regs, tx_fctrl, #{tr => Options#tx_opts.ranging}),
     PhyFrame = #phy_frame{ranging = Options#tx_opts.ranging, raw_mac_frame = Frame},
     {reply, tx(NetworkNode, PhyFrame), State#{regs => NewRegs}};
-handle_call(_Call, _From, State) -> io:format("Call not recognized"), {reply, ok, State}.
+handle_call({disable_rx}, _From, State) -> {reply, ok, maps:remove(waiting, State)};
+handle_call(_Call, _From, State) -> io:format("Call not recognized in mock pmod_uwb: ~p", [_Call]), {reply, ok, State}.
 
 handle_cast({reception, Ref, From}, State) -> {noreply, State#{waiting => {From, Ref}}}.
 
 handle_info({frame, Frame}, #{network := NetworkNode, waiting := {From, Ref}, regs := #{eui := #{eui := ExtAddress}, panadr := #{short_addr := ShortAddress}, sys_cfg := #{ffen := 1}}} = State) ->
     #{regs := Regs} = State,
-    io:format("~w~n", [Frame]),
     RawFrame = Frame#phy_frame.raw_mac_frame,
     NewState = case check_address(RawFrame, ShortAddress, ExtAddress) of
                    ok -> ack_reply(NetworkNode, RawFrame),
@@ -181,7 +181,6 @@ handle_info({frame, Frame}, #{network := NetworkNode, waiting := {From, Ref}, re
                        From ! {Ref, affrej},
                        State
                end,
-    io:format("~w~n", [NewState]),
     {noreply, maps:remove(waiting, NewState)};
 handle_info({frame, Frame}, #{waiting := {From, Ref}, regs := #{sys_cfg := #{ffen := 0}}} = State) ->
     #{regs := Regs} = State,
@@ -190,9 +189,8 @@ handle_info({frame, Frame}, #{waiting := {From, Ref}, regs := #{sys_cfg := #{ffe
 handle_info({frame, _}, State) ->
     {noreply, State}.
 
-terminate(Reason, #{network := NetworkNode}) ->
-    io:format("Terminate: ~w", [Reason]),
-    {network_loop, NetworkNode} ! {unreg, node()}.
+terminate(Reason, _) ->
+    io:format("Terminate: ~w", [Reason]).
 
 %--- Internal -------------------------------------------------------------------
 tx(NetworkNode, Frame) ->
