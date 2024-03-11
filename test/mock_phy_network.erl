@@ -194,6 +194,7 @@ terminate(Reason, _) ->
 
 %--- Internal -------------------------------------------------------------------
 tx(NetworkNode, Frame) ->
+    ct:log("Tx frame"),
     {network_loop, NetworkNode} ! {tx, node(), Frame},
     ok.
 
@@ -207,13 +208,15 @@ check_address(Frame, ShortAddress, ExtAddress) -> % This will need to check the 
 
 ack_reply(NetworkNode, Frame) ->
     <<_:2, ACKREQ:1, _/bitstring>> = Frame,
-    io:format("Ack req: ~w ~n ~w", [ACKREQ, Frame]),
+    % io:format("Ack req: ~w ~n ~w", [ACKREQ, Frame]),
     case Frame of
         <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/bitstring>> ->
-            io:format("Ack requested~n"),
+            % io:format("Ack requested~n"),
             AckFrame = #phy_frame{raw_mac_frame = mac_frame:encode_ack(?DISABLED, Seqnum), ranging = ?DISABLED},
             tx(NetworkNode, AckFrame);
-        _ -> io:format("No Ack requested~n"), ok
+        _ ->
+            % io:format("No Ack requested~n"),
+            ok
     end.
 
 received(From, Ref, Regs, Frame) ->

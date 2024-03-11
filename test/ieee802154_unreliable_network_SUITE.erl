@@ -20,18 +20,23 @@
 % Test cases
 -export([sender/1]).
 -export([receiver/1]).
+-export([middleman/1]).
 
 %--- Macros --------------------------------------------------------------------
 
 -define(SENDER_ADDR, <<16#CAFEDECA00000001:64>>).
 -define(RCVR_ADDR, <<16#CAFEDECA00000002:64>>).
+-define(MDL_ADDR, <<16#CAFEDECA00000003:64>>).
 
 %--- Common test callbacks -----------------------------------------------------
 
-all() -> [{group, unreliable_ack_exchange}].
+all() -> [{group, unreliable_ack_exchange},
+          {group, unreliable_forwarding}].
 
 groups() -> [{unreliable_ack_exchange, [sequential] , [{group, single_exchange}]},
-             {single_exchange, [parallel, {repeat, 2}], [sender, receiver]}
+             {single_exchange, [parallel, {repeat, 2}], [sender, receiver]},
+             {unreliable_forwarding, [sequential], [{group, forwarding}]},
+             {forwarding, [parallel, {repeat, 4}], [sender, middleman, receiver]}
             ].
 
 %--- Suite setup/teardown
@@ -58,6 +63,22 @@ init_per_group(unreliable_ack_exchange, Config) ->
      {payload, Payload},
      {net_pid, NetPid},
      {network, Network} | Config];
+init_per_group(unreliable_forwarding, Config) ->
+    TemplateFC = #frame_control{frame_type = ?FTYPE_DATA,
+                                src_addr_mode = ?EXTENDED,
+                                dest_addr_mode = ?EXTENDED,
+                                ack_req = ?ENABLED},
+    TemplateMH = #mac_header{src_pan = <<16#CAFEDECA:16>>,
+                             dest_pan = <<16#DECACAFE:16>>,
+                             src_addr = ?SENDER_ADDR,
+                             dest_addr = ?MDL_ADDR},
+    Payload = <<"Payload">>,
+    {NetPid, Network} = ieee802154_node:boot_network_node(#{loss => true}),
+    [{fc, TemplateFC},
+     {mh, TemplateMH},
+     {payload, Payload},
+     {net_pid, NetPid},
+     {network, Network} | Config];
 init_per_group(_, Config) ->
     Config.
 
@@ -71,12 +92,27 @@ end_per_group(_, _Config) ->
 %--- Test cases setup/teardown
 init_per_testcase(sender, Config) ->
     Network = ?config(network, Config),
-    NodeRef = ieee802154_node:boot_ieee802154_node(sender, Network, mac_extended_address, ?SENDER_ADDR),
+    NodeRef = ieee802154_node:boot_ieee802154_node(sender,
+                                                   Network,
+                                                   mac_extended_address,
+                                                   ?SENDER_ADDR),
     [{sender, NodeRef} | Config];
 init_per_testcase(receiver, Config) ->
     Network = ?config(network, Config),
-    NodeRef = ieee802154_node:boot_ieee802154_node(receiver, Network, mac_extended_address, ?RCVR_ADDR),
-    [{receiver, NodeRef} | Config].
+    NodeRef = ieee802154_node:boot_ieee802154_node(receiver,
+                                                   Network,
+                                                   mac_extended_address,
+                                                   ?RCVR_ADDR,
+                                                   fun mock_top_layer:rx_frame/4),
+    [{receiver, NodeRef} | Config];
+init_per_testcase(middleman, Config) ->
+    Network = ?config(network, Config),
+    NodeRef = ieee802154_node:boot_ieee802154_node(middleman,
+                                                   Network,
+                                                   mac_extended_address,
+                                                   ?MDL_ADDR,
+                                                   fun mock_top_layer:rx_frame/4),
+    [{middleman, NodeRef} | Config].
 
 end_per_testcase(Name, Config) ->
     {NodePid, Node} = ?config(Name, Config),
@@ -97,6 +133,14 @@ receiver(Config) ->
    {_, Node} = ?config(receiver, Config),
    ok = erpc:call(Node, ieee802154, rx_on, []),
    timer:sleep(10000),
-   % TODO check if all received correctly,
-   ok.
+   {ok, Dump} = erpc:call(Node, mock_top_layer, dump, []),
+   ?assertNotMatch([], Dump). % Must at least receive one frame
 
+middleman(Config) ->
+   {_, Node} = ?config(middleman, Config),
+   ok = erpc:call(Node, ieee802154, rx_on, []),
+   timer:sleep(10000),
+   {ok, Dump} = erpc:call(Node, mock_top_layer, dump, []),
+   ?assertNotMatch([], Dump). % Must at least receive one frame
+
+%--- Internal ------------------------------------------------------------------
