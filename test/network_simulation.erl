@@ -4,6 +4,9 @@
 
 -include_lib("common_test/include/ct.hrl").
 
+
+-include("../src/mac_frame.hrl").
+
 %%% EXPORTS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% application callbacks
 -export([start/2]).
@@ -14,7 +17,7 @@
       Args :: #{loss => boolean()}.
 start(_, Args) ->
     Loss = maps:get(loss, Args, false),
-    StartData = #{nodes => #{}, loss => Loss},
+    StartData = #{nodes => sets:new(), exchanges => #{}, loss => Loss},
     LoopPid = spawn(fun() -> loop(ready, StartData) end),
     register(network_loop, LoopPid),
     {ok, LoopPid}.
@@ -28,24 +31,25 @@ stop(_) ->
 -spec loop(State, Data) -> ok when
       State :: ready | blocked,
       Data  :: #{nodes := NodeMap, loss := boolean()},
-      NodeMap :: #{node() => {non_neg_integer(), non_neg_integer()}}.
+      NodeMap :: #{node() => sets:set()}.
 loop(ready, #{nodes := Nodes} = Data) ->
     receive
         {ping, Pid, Node} ->
             {Pid, Node} ! pong, loop(ready, Data);
         {register, Name} ->
-            NewNodes = update_nodes(Name, Nodes),
+            NewNodes = sets:add_element(Name, Nodes),
             loop(ready, Data#{nodes => NewNodes});
         {tx, From, Frame} ->
             do_broadcast(Data, From, Frame);
-        {stop} -> ok
+        {stop} ->
+            ok
     end;
 loop(blocked, #{nodes := Nodes} = Data) ->
     receive 
         {register, _Name} ->
             loop(ready, Data);
         {tx, From, Frame} -> % Once a frame has been blocked => pass through
-            broadcast(maps:keys(Nodes), From, Frame),
+            broadcast(sets:to_list(Nodes), From, Frame),
             loop(blocked, Data);
         {stop} ->
             ok;
@@ -53,24 +57,23 @@ loop(blocked, #{nodes := Nodes} = Data) ->
             error(wrong_event_in_blocked, OtherEvent)
     end.
 
-update_nodes(Name, Nodes) ->
-    case maps:is_key(Name, Nodes) of
-        true -> Nodes;
-        false -> maps:put(Name, {0, 0}, Nodes)
-    end.
-
 do_broadcast(#{loss := false, nodes := Nodes} = Data, From, Frame) ->
-    broadcast(maps:keys(Nodes), From, Frame),
+    broadcast(sets:to_list(Nodes), From, Frame),
     loop(ready, Data);
-do_broadcast(#{loss := true, nodes := Nodes} = Data, From, Frame) ->
-    case maps:get(From, Nodes) of
+do_broadcast(#{loss := true} = Data, From, Frame) ->
+    {_, RawFrame} = Frame,
+    #{nodes := Nodes, exchanges := Exchanges} = Data,
+    {_, MH, _} = mac_frame:decode(RawFrame),
+    #mac_header{dest_addr = DestAddr} = MH,
+    Key = {From, DestAddr},
+    case maps:get(Key, Exchanges, {0,0}) of
         {MemorySeen, MemorySeen} ->
-            NewNodes = maps:update(From, {0, MemorySeen+1}, Nodes),
-            loop(blocked, Data#{nodes => NewNodes});
+            NewExch = maps:put(Key, {0, MemorySeen+1}, Exchanges),
+            loop(blocked, Data#{exchanges => NewExch});
         {RndSeen, MemorySeen} ->
-            broadcast(maps:keys(Nodes), From, Frame),
-            NewNodes = maps:update(From, {RndSeen+1, MemorySeen}, Nodes),
-            loop(ready, Data#{nodes => NewNodes})
+            broadcast(sets:to_list(Nodes), From, Frame),
+            NewExch = maps:put(Key, {RndSeen+1, MemorySeen}, Exchanges),
+            loop(ready, Data#{exchanges => NewExch})
     end.
 
 broadcast([], _, _) -> 

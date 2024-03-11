@@ -36,8 +36,8 @@
 -export([terminate/2]).
 
 %--- Records -------------------------------------------------------------------
--record(phy_frame, {ranging = ?DISABLED  :: flag(),
-                    raw_mac_frame :: binary()}).
+
+
 
 %--- API -----------------------------------------------------------------------
 
@@ -163,7 +163,7 @@ handle_call({write, Reg, Value}, _From, #{regs := Regs} = State) -> {reply, ok, 
 handle_call({transmit, Frame, Options}, _From, #{network := NetworkNode} = State) ->
     #{regs := Regs} = State,
     NewRegs = pmod_uwb_registers:update_reg(Regs, tx_fctrl, #{tr => Options#tx_opts.ranging}),
-    PhyFrame = #phy_frame{ranging = Options#tx_opts.ranging, raw_mac_frame = Frame},
+    PhyFrame = {Options#tx_opts.ranging, Frame},
     {reply, tx(NetworkNode, PhyFrame), State#{regs => NewRegs}};
 handle_call({disable_rx}, _From, State) -> {reply, ok, maps:remove(waiting, State)};
 handle_call(_Call, _From, State) -> io:format("Call not recognized in mock pmod_uwb: ~p", [_Call]), {reply, ok, State}.
@@ -172,7 +172,7 @@ handle_cast({reception, Ref, From}, State) -> {noreply, State#{waiting => {From,
 
 handle_info({frame, Frame}, #{network := NetworkNode, waiting := {From, Ref}, regs := #{eui := #{eui := ExtAddress}, panadr := #{short_addr := ShortAddress}, sys_cfg := #{ffen := 1}}} = State) ->
     #{regs := Regs} = State,
-    RawFrame = Frame#phy_frame.raw_mac_frame,
+    {_, RawFrame} = Frame,
     NewState = case check_address(RawFrame, ShortAddress, ExtAddress) of
                    ok -> ack_reply(NetworkNode, RawFrame),
                          NewRegs = received(From, Ref, Regs, Frame),
@@ -212,7 +212,7 @@ ack_reply(NetworkNode, Frame) ->
     case Frame of
         <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/bitstring>> ->
             % io:format("Ack requested~n"),
-            AckFrame = #phy_frame{raw_mac_frame = mac_frame:encode_ack(?DISABLED, Seqnum), ranging = ?DISABLED},
+            AckFrame = {?DISABLED, mac_frame:encode_ack(?DISABLED, Seqnum)},
             tx(NetworkNode, AckFrame);
         _ ->
             % io:format("No Ack requested~n"),
@@ -220,7 +220,7 @@ ack_reply(NetworkNode, Frame) ->
     end.
 
 received(From, Ref, Regs, Frame) ->
-    UpdatedRegs = pmod_uwb_registers:update_reg(Regs, rx_finfo, #{rng => Frame#phy_frame.ranging}),
-    RawFrame = Frame#phy_frame.raw_mac_frame,
+    {Ranging, RawFrame} = Frame,
+    UpdatedRegs = pmod_uwb_registers:update_reg(Regs, rx_finfo, #{rng => Ranging}),
     From ! {Ref, {byte_size(RawFrame), RawFrame}},
     UpdatedRegs.

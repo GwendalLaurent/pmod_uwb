@@ -43,7 +43,6 @@ init(_) ->
     {ok, #{received => []}}.
 
 handle_call({dump}, _From, #{received := Received} = State) ->
-    ct:log("Dumping"),
     {reply, {ok, lists:reverse(Received)}, State#{received => []}};
 handle_call(_, _, _) ->
   error(not_implemented).
