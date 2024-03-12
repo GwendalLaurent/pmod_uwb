@@ -10,17 +10,12 @@ Structure of the repository
 -----
 
 * doc: documentation of the pmod generated with edocs
-* examples: contains some examples of applications used in the thesis. (the examples are not up to date)
-    * `ack_no_jitter`: This application can perform an exchange of a specified number of a specified size between 2 devices. At the end of a run, the *sender* will display the statistics of the exchange
-    * `ack_jitter`: This application will perform the same operation as `ack_no_jitter` but will introduce articifial jitter in the network.
-    * `ack_fast_tx`: This application also perform an exchange of a specified number of frame. But here, the same hardcoded frame is sent every time. The goal of this application is to test the limit of the driver.
-    * `ss_twr`: This application performs a single-sided two-way ranging between two devices. Keep in mind that in the current configuration the results are too unprecise to be used in a RTLS application.
-    * `ds_twr`: This application performs a double-sided two-way ranging between two devices.
-* exploring: notes made during litterature exploration (no use)
+* docs: additional documentation
+* examples: (outdated)
 * measurements: contains the python script used to draw some graphs for the two-way ranging measurements + the csv containing the measurements
 * src: contains the source code of the driver
-* test: contains the unit tests used for the MAC layer
-* mcd.sh: the bash script I use to deploy the applications on my SD card. (Works on Manjaro, not tested for other OS)
+* test: contains the tests
+* mcd.sh: the bash script I use to deploy the applications on my SD card. (Only for MacOS)
 
 Deploy the examples
 -------------------
@@ -64,6 +59,21 @@ To activate the continuous reception without enabling ranging:
 ```erlang
 ieee802154:rx_on(?DISABLED).
 ```
+
+Testing
+-------
+To run all the tests you have to run the following command:
+```
+rebar3 ct --sname=test
+```
+More informations about the tests can be found [here]("docs/tests.md")
+
+
+Callback function
+-----------------
+At the reception of a frame, the IEEE 802.15.4 stack will call the specified callback function. More precisely, the process running the `ieee802154.erl` gen_server will call the callback.
+For that reason, the callback can't directly call API function of `ieee802154.erl` module unless they are non-blocking.
+
 IEEE 802.15.4 stack structure
 -----------------------------
 <p align="center">
