@@ -342,7 +342,7 @@ ed_beacon_gts_and_pend_addr(Config) ->
                                           short_addr_pending = [<<16#0003:16>>],
                                           nbr_ext_addr_pending = 0,
                                           ext_addr_pending = []},
-    MacPayload = <<16#CBDE82001C00011D0002010003:104>>,
+    MacPayload = <<16#CBDE82001C01001D0200010300:104>>,
     ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:104/bitstring>>,
     ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
 
@@ -378,7 +378,7 @@ ed_beacon_only_gts(Config) ->
                                           short_addr_pending = [],
                                           nbr_ext_addr_pending = 0,
                                           ext_addr_pending = []},
-    MacPayload = <<16#CBDE82001C00011D000200:88>>,
+    MacPayload = <<16#CBDE82001C01001D020000:88>>,
     ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:88/bitstring>>,
     ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
 
@@ -410,7 +410,7 @@ ed_beacon_only_pend_addr(Config) ->
                                           nbr_ext_addr_pending = 2,
                                           ext_addr_pending = [<<16#CAFEDECA00000001:64>>,
                                                               <<16#CAFEDECA00000002:64>>]},
-    MacPayload = <<16#CDDE802200010002CAFEDECA00000001CAFEDECA00000002:192>>,
+    MacPayload = <<16#CDDE80220100020001000000CADEFECA02000000CADEFECA:192>>,
     ExpectedData = <<MHR:MHRSize/bitstring, MacPayload:192/bitstring>>,
     ExpectedBeaconFields = {ExpectedSFrameSpecs, ExpectedGTS, ExpectedPendAddr, ExpectedPayload},
 

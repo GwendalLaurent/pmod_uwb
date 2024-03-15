@@ -56,35 +56,6 @@ encode_beacon(FrameControl, MacHeader, BeaconFields) ->
     MacPayload = encode_beacon_flds(SFSpecs, GTSFlds, PendAddrFlds, Payload),
     encode(FrameControl, MacHeader, MacPayload).
 
--spec encode_beacon_flds(SFSpecs, GTSFlds, PendAddrFlds, Payload) -> Result when
-      SFSpecs      :: superframe_specs(),
-      GTSFlds      :: gts_fields(),
-      PendAddrFlds :: pending_addr_flds(),
-      Payload      :: binary(),
-      Result       :: binary().
-encode_beacon_flds(SFSpecs, GTSFlds, PendAddrFlds, Payload) ->
-    SFSpecsBits = encode_superframe_specs(SFSpecs),
-    GTSFldsBits = encode_gts_fields(GTSFlds),
-    PendAddrFldsBits = encode_pend_addr_flds(PendAddrFlds),
-    <<SFSpecsBits/binary,
-      GTSFldsBits/bitstring,
-      PendAddrFldsBits/binary,
-      Payload/bitstring>>.
-
--spec encode_beacon_request() -> bitstring().
-encode_beacon_request() ->
-    Seqnum = rand:uniform(255),
-    FrameControl = #frame_control{frame_type = ?FTYPE_MACCOM,
-                                  dest_addr_mode = ?SHORT_ADDR,
-                                  src_addr_mode = ?NONE,
-                                  frame_pending = ?DISABLED,
-                                  ack_req = ?DISABLED,
-                                  sec_en = ?DISABLED},
-    MacHeader = #mac_header{dest_pan = <<16#FFFF:16>>,
-                            dest_addr = <<16#FFFF:16>>,
-                            seqnum = Seqnum},
-    Payload = <<16#06:16>>,
-    encode(FrameControl, MacHeader, Payload).
 
 %--- API: Decoding functions
 
@@ -280,6 +251,36 @@ decode_frame_control(FC) ->
     <<_:1, PanIdCompr:1, AckReq:1, FramePending:1, SecEn:1, FrameType:3, SrcAddrMode:2, FrameVersion:2, DestAddrMode:2, _:2>> = FC,
     #frame_control{frame_type = FrameType, sec_en = SecEn, frame_pending = FramePending, ack_req = AckReq, pan_id_compr = PanIdCompr, dest_addr_mode = DestAddrMode, frame_version = FrameVersion, src_addr_mode = SrcAddrMode}.
 
+-spec encode_beacon_flds(SFSpecs, GTSFlds, PendAddrFlds, Payload) -> Result when
+      SFSpecs      :: superframe_specs(),
+      GTSFlds      :: gts_fields(),
+      PendAddrFlds :: pending_addr_flds(),
+      Payload      :: binary(),
+      Result       :: binary().
+encode_beacon_flds(SFSpecs, GTSFlds, PendAddrFlds, Payload) ->
+    SFSpecsBits = encode_superframe_specs(SFSpecs),
+    GTSFldsBits = encode_gts_fields(GTSFlds),
+    PendAddrFldsBits = encode_pend_addr_flds(PendAddrFlds),
+    <<SFSpecsBits/binary,
+      GTSFldsBits/bitstring,
+      PendAddrFldsBits/binary,
+      Payload/bitstring>>.
+
+-spec encode_beacon_request() -> bitstring().
+encode_beacon_request() ->
+    Seqnum = rand:uniform(255),
+    FrameControl = #frame_control{frame_type = ?FTYPE_MACCOM,
+                                  dest_addr_mode = ?SHORT_ADDR,
+                                  src_addr_mode = ?NONE,
+                                  frame_pending = ?DISABLED,
+                                  ack_req = ?DISABLED,
+                                  sec_en = ?DISABLED},
+    MacHeader = #mac_header{dest_pan = <<16#FFFF:16>>,
+                            dest_addr = <<16#FFFF:16>>,
+                            seqnum = Seqnum},
+    Payload = <<16#06:16>>,
+    encode(FrameControl, MacHeader, Payload).
+
 %--- Internal: Beacon decoding helping functions
 -spec decode_beacon(Payload) -> Result when
       Payload         :: binary(),
@@ -368,7 +369,7 @@ get_gts_descriptors(DescLeft, Leftover, Acc) ->
       StartingSlot:4/integer,
       ShortAddr:16/bitstring,
       Rest/bitstring>> = Leftover,
-    Descr = #gts_descr{short_addr = ShortAddr,
+    Descr = #gts_descr{short_addr = reverse_byte_order(ShortAddr),
                        starting_slot = StartingSlot,
                        gts_length = Length},
     get_gts_descriptors(DescLeft-1, Rest, [Descr | Acc]).
@@ -407,10 +408,12 @@ get_addrs(0, 0, Left, {ShortAddrs, ExtAddrs}) ->
     {ShortAddrs, ExtAddrs, Left};
 get_addrs(0, NbrExt, Left, {ShortAddrs, ExtAddrs}) ->
     <<ExtAddr:64/bitstring, Rest/bitstring>> = Left,
-    get_addrs(0, NbrExt-1, Rest, {ShortAddrs, [ExtAddr | ExtAddrs]});
+    NewExtAddr = [reverse_byte_order(ExtAddr) | ExtAddrs],
+    get_addrs(0, NbrExt-1, Rest, {ShortAddrs, NewExtAddr});
 get_addrs(NbrShort, NbrExt, Left, {ShortAddrs, ExtAddrs}) ->
     <<ShortAddr:16/bitstring, Rest/bitstring>> = Left,
-    get_addrs(NbrShort-1, NbrExt, Rest, {[ShortAddr | ShortAddrs], ExtAddrs}).
+    NewShortAddrs = [reverse_byte_order(ShortAddr) | ShortAddrs],
+    get_addrs(NbrShort-1, NbrExt, Rest, {NewShortAddrs, ExtAddrs}).
 
 -spec encode_superframe_specs(superframe_specs()) -> binary().
 encode_superframe_specs(SFSpecs) ->
@@ -429,10 +432,10 @@ encode_gts_fields(GTSFlds) ->
     DirectionMask = GTSFlds#gts_fields.gts_direction,
     Descriptors = lists:foldl(
                     fun(GTSDesc, AccIn) ->
-                            Len = GTSDesc#gts_descr.gts_length,
-                            Slot = GTSDesc#gts_descr.starting_slot,
-                            Addr = GTSDesc#gts_descr.short_addr,
-                            <<AccIn/bitstring, Len:4, Slot:4, Addr/bitstring>>
+                        Len = GTSDesc#gts_descr.gts_length,
+                        Slot = GTSDesc#gts_descr.starting_slot,
+                        Addr = reverse_byte_order(GTSDesc#gts_descr.short_addr),
+                        <<AccIn/bitstring, Len:4, Slot:4, Addr/bitstring>>
                     end,
                     <<>>,
                     GTSFlds#gts_fields.gts_descr_list),
@@ -454,12 +457,14 @@ encode_pend_addr_flds(PendAddrFlds) ->
     NbrShort = PendAddrFlds#pending_addr_flds.nbr_short_addr_pending,
     Specs = <<0:1, NbrExt:3, 0:1, NbrShort:3>>,
     ShortAddrs = lists:foldl(fun(Addr, Acc) ->
-                                     <<Acc/binary, Addr/binary>>
+                                     RevAddr = reverse_byte_order(Addr),
+                                     <<Acc/binary, RevAddr/binary>>
                              end,
                              <<>>,
                              PendAddrFlds#pending_addr_flds.short_addr_pending),
     ExtAddrs = lists:foldl(fun(Addr, Acc) ->
-                                     <<Acc/binary, Addr/binary>>
+                                     RevAddr = reverse_byte_order(Addr),
+                                     <<Acc/binary, RevAddr/binary>>
                              end,
                              <<>>,
                              PendAddrFlds#pending_addr_flds.ext_addr_pending),
