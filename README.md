@@ -6,39 +6,22 @@ The whole implementation was done during my master thesis at UCLouvain.
 
 It also contains the implementation of a IEEE 802.15.4 stack. This job is still in progress.
 
-Structure of the repository
------
+The pmod uses the DW1000 chip manufactured by Qorvo. For more informations about the chip please refer to its [product page](https://www.qorvo.com/products/p/DW1000). There you can find:
+- The user manual [pdf](https://www.qorvo.com/products/d/da007967)
+- The datasheet [pdf](https://www.qorvo.com/products/d/da007946)
 
-* doc: documentation of the pmod generated with edocs
-* examples: contains some examples of applications used in the thesis. (the examples are not up to date)
-    * `ack_no_jitter`: This application can perform an exchange of a specified number of a specified size between 2 devices. At the end of a run, the *sender* will display the statistics of the exchange
-    * `ack_jitter`: This application will perform the same operation as `ack_no_jitter` but will introduce articifial jitter in the network.
-    * `ack_fast_tx`: This application also perform an exchange of a specified number of frame. But here, the same hardcoded frame is sent every time. The goal of this application is to test the limit of the driver.
-    * `ss_twr`: This application performs a single-sided two-way ranging between two devices. Keep in mind that in the current configuration the results are too unprecise to be used in a RTLS application.
-    * `ds_twr`: This application performs a double-sided two-way ranging between two devices.
-* exploring: notes made during litterature exploration (no use)
-* measurements: contains the python script used to draw some graphs for the two-way ranging measurements + the csv containing the measurements
-* src: contains the source code of the driver
-* test: contains the unit tests used for the MAC layer
-* mcd.sh: the bash script I use to deploy the applications on my SD card. (Works on Manjaro, not tested for other OS)
+Get started
+-----------
+:warning: The pmod isn't hot pluggable. The boards needs to be fully turned off before pluggin/unplugging it :warning:
 
-Deploy the examples
--------------------
+If you are new with GRiSP, it is recommended to get used to it by following our tutorial [here](https://github.com/grisp/grisp/wiki/Setting-Up-a-Development-Environment)
+The tutorial will guide you on setting up your environment to creating and deploying your first GRiSP application.
 
-Before trying to deploy an example, you have to change the path of the SD card in the file `rebar.config` to match the path of your SD card. By default they are configured to be deployed on a SD card named *GRISP_SD* located at `/run/media/michel/`.
-When this is done, you have to run `rebar3 compile` to build the application, and `rebar3 grisp deploy` to deploy the app on your SD card.
+When this is done, you are ready to work with the pmod UWB.
 
-Each example contain an API function for the *sender* and a function for the *receiver*.
+The pmod UWB uses the SPI2 interface exclusively. You can find more informations about SPI [here](https://en.wikipedia.org/wiki/Serial_Peripheral_Interface)
 
-Run the tests
-------
-To run the tests, you can run the following command in your shell at the root of the project:
-```
-rebar3 eunit
-```
-
-Robot Example
--------------
+### Robot Example
 
 ```erlang
 start(_Type, _Args) ->
@@ -64,16 +47,39 @@ To activate the continuous reception without enabling ranging:
 ```erlang
 ieee802154:rx_on(?DISABLED).
 ```
+
+Sniffing the UWB frames
+-----------------------
+You can sniff and observe the UWB frames using a UWB sniffer.
+
+You can find more informations on how to proceed using the Sewio UWB sniffer [here]("docs/sniffer.md")
+
+Testing
+-------
+To run all the tests you have to run the following command:
+```
+rebar3 ct --sname=test
+```
+More informations about the tests can be found [here]("docs/tests.md")
+
+
+Callback function
+-----------------
+At the reception of a frame, the IEEE 802.15.4 stack will call the specified callback function. More precisely, the process running the `ieee802154.erl` gen_server will call the callback.
+For that reason, the callback can't directly call API function of `ieee802154.erl` module unless they are non-blocking.
+
+Structure of the repository
+-----
+
+* doc: Edocs module documentation
+* docs: additional documentation about the IEEE 802.15.4 stack and how to use it
+* examples: (outdated)
+* measurements: contains the python script used to draw some graphs for the two-way ranging measurements + the csv containing the measurements
+* src: contains the source code of the driver
+* test: contains the tests
+
 IEEE 802.15.4 stack structure
 -----------------------------
-<p align="center">
-<img src="./doc/images/ieee802154_stack.png" alt="IEEE stack">
-</p>
-
-The diagram displays the structure of the IEEE 802.15.4 stack.
-The blue blocks are modules that can be changed to create a new behaviour.
-
-The following subsections gives an indication of the roles and responsabilities of the different modules of the stack
 
 ### ieee802154.erl
 
