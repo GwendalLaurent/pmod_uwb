@@ -2,7 +2,7 @@
 
 -module(ieee802154_node).
 
--export([boot_network_node/0, stop_network_node/2]).
+-export([boot_network_node/0, boot_network_node/1, stop_network_node/2]).
 -export([boot_ieee802154_node/4, stop_ieee802154_node/2]).
 -export([boot_ieee802154_node/5]).
 -export([boot_node/1]).
@@ -18,13 +18,17 @@
 -type mac_address_type() :: mac_short_address | mac_extended_address.
 -type mac_address() :: <<_:16>> | <<_:64>>.
 
+%% @equiv boot_network_node(#{}).
+-spec boot_network_node() -> node().
+boot_network_node() ->
+    boot_network_node(#{}).
+
 %% @doc Boot the network simulation node
 %% This node is necessary to simulate the real UWB physical network
 %% At startup, the mock_phy_network register themselves to the network to receive the tx frames
--spec boot_network_node() -> node().
-boot_network_node() ->
+boot_network_node(Args) ->
     {Pid, Network} = boot_node(network),
-    erpc:call(Network, network_simulation, start, [{}, {}]),
+    erpc:call(Network, network_simulation, start, [{}, Args]),
     ping_node(network_loop, Network),
     {Pid, Network}.
 
@@ -48,7 +52,7 @@ stop_network_node(Network, NetPid) ->
       AddressType :: mac_address_type(), 
       Address :: mac_address().
 boot_ieee802154_node(Name, Network, AddressType, Address) ->
-    boot_ieee802154_node(Name, Network, AddressType, Address, fun() -> ok end).
+    boot_ieee802154_node(Name, Network, AddressType, Address, fun(_, _, _, _) -> ok end).
 
 %% @doc Boots a node and initialize a IEEE 802.15.4 stack inside
 %% the stack will use the mock_phy_network to simulate communications over UWB
@@ -64,7 +68,8 @@ boot_ieee802154_node(Name, Network, AddressType, Address) ->
 boot_ieee802154_node(Name, Network, AddressType, Address, Callback) ->
     {Pid, Node} = boot_node(Name),
     erpc:call(Node, mock_phy_network, start, [spi2, #{network => Network}]), % Starting the the mock driver/physical layer
-    erpc:call(Node, ieee802154, start, [#ieee_parameters{phy_layer = mock_phy_network, duty_cycle = duty_cycle_non_beacon, input_callback = Callback }]),
+    erpc:call(Node, ieee802154, start, [#ieee_parameters{phy_layer = mock_phy_network, duty_cycle = duty_cycle_non_beacon, input_callback = Callback}]),
+    erpc:call(Node, mock_top_layer, start, []),
     case AddressType of
         mac_extended_address -> erpc:call(Node, ieee802154, set_mac_extended_address, [Address]);
         mac_short_address -> erpc:call(Node, ieee802154, set_mac_short_address, [Address])

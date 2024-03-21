@@ -56,12 +56,12 @@ You can find more informations on how to proceed using the Sewio UWB sniffer [he
 
 Testing
 -------
+
 To run all the tests you have to run the following command:
 ```
 rebar3 ct --sname=test
 ```
 More informations about the tests can be found [here]("docs/tests.md")
-
 
 Callback function
 -----------------
