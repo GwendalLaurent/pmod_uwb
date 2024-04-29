@@ -140,11 +140,14 @@ start(_Type, _Args) ->
                        input_callback = fun double_sided_3_msg:rx_callback/4}
      ),
 
-    {ok, PanId} = application:get_env(robot, pan_id),
-    {ok, MacAddr} = application:get_env(robot, mac_addr),
-    io:format("Env: ~p~n", [application:get_all_env()]),
-    ieee802154:set_pib_attribute(mac_pan_id, PanId),
-    ieee802154:set_pib_attribute(mac_short_address, MacAddr),
+    case application:get_env(robot, pan_id) of
+        {ok, PanId} -> ieee802154:set_pib_attribute(mac_pan_id, PanId);
+        _ -> ok
+    end,
+    case application:get_env(robot, mac_addr) of
+        {ok, MacAddr} -> ieee802154:set_pib_attribute(mac_short_address, MacAddr);
+        _ -> ok
+    end,
 
     double_sided_3_msg:start_link(),
     ieee802154:rx_on(?ENABLED),
