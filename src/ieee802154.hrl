@@ -49,6 +49,7 @@
 %--- IEEE 802.15.4 parameter types
 -export_type([ieee_parameters/0, ranging_informations/0, security/0, input_callback/0, ranging_tx/0, tx_error/0]).
 -type cw0() :: 1 | 2.
+-type mac_extended_address() :: <<_:64>>.
 -type mac_max_BE() :: 3..8.
 -type mac_max_csma_backoff() :: 0..5.
 -type mac_min_BE() :: 0..8.

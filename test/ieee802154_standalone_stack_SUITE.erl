@@ -72,9 +72,11 @@ double_on_off(_Config) ->
 
 get_set_mac_extended_addr(_Config) ->
     ExtAddr = <<16#DECACAFEDECACAFE:64>>,
-    DefaultValue = ieee802154:get_mac_extended_address(),
-    ieee802154:set_mac_extended_address(ExtAddr),
-    NewValue = ieee802154:get_mac_extended_address(),
+    DefaultValue = ieee802154:get_pib_attribute(mac_extended_address),
+    #{eui := EUI} = mock_phy:read(eui),
+    ?assertEqual(EUI, DefaultValue),
+    ieee802154:set_pib_attribute(mac_extended_address, ExtAddr),
+    NewValue = ieee802154:get_pib_attribute(mac_extended_address),
     ?assertEqual(ExtAddr, NewValue),
     ?assertNotEqual(ExtAddr, DefaultValue).
 
@@ -130,6 +132,7 @@ get_set_unsupported_attribute(_Config) ->
     {error, unsupported_attribute} = ieee802154:set_pib_attribute(unknown_attribute, 40).
 
 mlme_reset_pib_reset_true_test(_Config) ->
+    ieee802154:set_pib_attribute(mac_extended_address, <<16#DECACAFEFEEDBEEF:64>>),
     ieee802154:set_pib_attribute(mac_short_address, <<16#BEEF:16>>),
     ieee802154:set_pib_attribute(mac_pan_id, <<16#FEED:16>>),
     ieee802154:set_pib_attribute(mac_max_BE, 4),
@@ -138,6 +141,8 @@ mlme_reset_pib_reset_true_test(_Config) ->
 
     ieee802154:reset(true),
 
+    NewExtAddr = ieee802154:get_pib_attribute(mac_extended_address),
+    ?assertEqual(<<16#FFFFFFFF00000000:64>>, NewExtAddr),
     NewShortAddr = ieee802154:get_pib_attribute(mac_short_address),
     ?assertEqual(<<16#FFFF:16>>, NewShortAddr),
     NewPanId = ieee802154:get_pib_attribute(mac_pan_id),
@@ -153,6 +158,7 @@ mlme_reset_pib_reset_true_test(_Config) ->
     ?assertEqual(3, NewMinBE).
 
 mlme_reset_pib_reset_false_test(_Config) ->
+    ieee802154:set_pib_attribute(mac_extended_address, <<16#DECACAFEFEEDBEEF:64>>),
     ieee802154:set_pib_attribute(mac_short_address, <<16#BEEF:16>>),
     ieee802154:set_pib_attribute(mac_pan_id, <<16#FEED:16>>),
     ieee802154:set_pib_attribute(mac_max_BE, 4),
@@ -161,6 +167,10 @@ mlme_reset_pib_reset_false_test(_Config) ->
 
     ieee802154:reset(false),
 
+    #{eui := PmodEUI} = mock_phy:read(eui),
+    NewExtAddr = ieee802154:get_pib_attribute(mac_extended_address),
+    ?assertEqual(<<16#DECACAFEFEEDBEEF:64>>, NewExtAddr),
+    ?assertEqual(<<16#DECACAFEFEEDBEEF:64>>, PmodEUI),
     #{pan_id := PmodPanId, short_addr := PmodShortAddr} = mock_phy:read(panadr),
     NewShortAddr = ieee802154:get_pib_attribute(mac_short_address),
     ?assertEqual(<<16#BEEF:16>>, NewShortAddr),

@@ -17,9 +17,6 @@
 -export([rx_on/1]).
 -export([rx_off/0]).
 
--export([get_mac_extended_address/0]).
--export([set_mac_extended_address/1]).
-
 -export([get_pib_attribute/1]).
 -export([set_pib_attribute/2]).
 
@@ -41,6 +38,7 @@
 
 %--- Types ---------------------------------------------------------------------
 -type pib_attribute() :: cw0
+                       | mac_extended_address
                        | mac_max_BE
                        | mac_min_BE
                        | mac_max_csma_backoffs
@@ -48,6 +46,7 @@
                        | mac_short_address.
 
 -type pib_attributes() :: #{cw0 := cw0(),
+                            mac_extended_address := mac_extended_address(),
                             mac_max_BE := mac_max_BE(),
                             mac_min_BE := mac_max_BE(),
                             mac_max_csma_backoffs := mac_max_csma_backoff(),
@@ -180,18 +179,6 @@ rx_on(Ranging) ->
 %% @end
 rx_off() ->
     gen_server:call(?MODULE, {rx_off}).
-
-%% @doc Gets the extended address of the device
-%% The function returns the address as a bitstring
--spec get_mac_extended_address() -> bitstring().
-get_mac_extended_address() ->
-    gen_server:call(?MODULE, {get, mac_extended_address}).
-
-%% @doc Sets the mac extended address of the device
-%% The Value is a bitstring with a size of 64 bits
--spec set_mac_extended_address(Value::bitstring()) -> ok.
-set_mac_extended_address(Value) ->
-    gen_server:call(?MODULE, {set, mac_extended_address, Value}).
 
 %% @doc Get the value of a PIB attribute
 %% @end
@@ -330,6 +317,7 @@ write_default_conf(PhyMod) ->
 
 -spec default_attribute_values() -> Attributes when
       Attributes   :: #{cw0 := 2,
+                     mac_extended_address := <<_:64>>,
                       mac_max_BE := 5,
                       mac_max_csma_backoffs := 4,
                       mac_min_BE := 3,
@@ -338,6 +326,7 @@ write_default_conf(PhyMod) ->
 default_attribute_values() ->
     #{
       cw0 => 2, % cf. p.22 standard
+      mac_extended_address => <<16#FFFFFFFF00000000:64>>,
       mac_max_BE => 5,
       mac_max_csma_backoffs => 4,
       mac_min_BE => 3,
@@ -362,9 +351,6 @@ get_csma_params(Attributes) ->
     Attribute  :: pib_attribute(),
     Result     :: {ok, Value} | {error, unsupported_attribute},
     Value      :: term().
-get(PhyMod, _Attributes, mac_extended_address) ->
-    #{eui := EUI} = PhyMod:read(eui),
-    {ok, EUI};
 get(_PhyMod, Attributes, Attribute) when is_map_key(Attribute, Attributes) ->
     {ok, maps:get(Attribute, Attributes)};
 get(_, _, _) ->
@@ -380,7 +366,7 @@ get(_, _, _) ->
     Error         :: pib_set_error().
 set(PhyMod, Attributes, mac_extended_address, Value) ->
     PhyMod:write(eui, #{eui => Value}), % TODO check the range/type/value given
-    {ok, Attributes};
+    {ok, Attributes#{mac_extended_address => Value}};
 set(PhyMod, Attributes, mac_short_address, Value) ->
     PhyMod:write(panadr, #{short_addr => Value}),
     {ok, Attributes#{mac_short_address => Value}};

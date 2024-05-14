@@ -6,7 +6,7 @@
 
 -spec default() -> map().
 default() ->
-    #{eui => #{eui => <<16#FFFFFFFFFFFFFFFF:64>>}, % 0x01
+    #{eui => #{eui => <<16#FFFFFFFF00000000:64>>}, % 0x01
       panadr => #{pan_id => <<16#FFFFFFFF:16>>, short_addr => <<16#FFFFFFFF:16>>}, % 0x03
       sys_cfg => #{aackpend => 0, % 0x04
                    autoack => 0,

@@ -29,5 +29,5 @@ make: mount compile
 dialyzer:
 	rebar3 dialyzer -u -s
 
-test:
+tests:
 	rebar3 ct --sname test
