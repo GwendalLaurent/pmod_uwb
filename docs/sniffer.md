@@ -15,22 +15,13 @@ Before running the sniffer, you must set the correct PHY parameters in the **Set
 
 Here is the list of the values for each settings
 
-|--------------------------|----------|
 |  Setting                 |   Value  |
 |--------------------------|----------|
 | Channel                  |     5    |
-|--------------------------|----------|
 |   PRF                    |    16MHz |
-|--------------------------|----------|
 | Data rate                | 6,8 Mbps |
-|--------------------------|----------|
 | Preamble code            | 4        |
-|--------------------------|----------|
 | PAC size                 |   8      |
-|--------------------------|----------|
 | Standard frame delimiter | Standard |
-|--------------------------|----------|
 | PHR                      | Standard |
-|--------------------------|----------|
 | CRC filter               | Off      |
-|--------------------------|----------|
