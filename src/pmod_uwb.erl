@@ -16,7 +16,7 @@
 -export([rx_ranging_info/0]).
 -export([std_noise/0]).
 -export([first_path_power_level/0]).
--export([change_channel/1]).
+-export([set_channel/2]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -91,15 +91,6 @@
                                         SubRegister==evc_hpw;
                                         SubRegister==evc_tpw).
 
-% Sec. 10.5, table 61. Preamble code for PRF 16MHz
--define(PCode, #{1 => {1, 2},
-                 2 => {3, 4},
-                 3 => {5, 6},
-                 4 => {7, 8},
-                 5 => {3, 4},
-                 7 => {7, 8}}).
-
--define(PCode(Channel), maps:get(Channel, ?PCode)).
 
 -define(RF_TXCTRL, #{1 => 16#00005C40,
                      2 => 16#00045CA0,
@@ -426,10 +417,10 @@ channel_impulse_resp_pow() ->
     #{cir_pwr := CIR_PWR} = read(rx_fqual),
     CIR_PWR.
 
-%% @doc Gives the value of the PRF in MHz 
+%% @doc Gives the value of the PRF in MHz
 -spec prf_value() -> 16 | 64.
 prf_value() ->
-    #{agc_tune1 := AGC_TUNE1} = read(agc_ctrl),
+    #{agc_tune1 := AGC_TUNE1} = read(agc_ctrl), % Fethcing AGC_TUNE1 and not TXPRF ?
     case AGC_TUNE1 of
         16#8870 -> 16;
         16#889B -> 64
@@ -470,21 +461,19 @@ first_path_power_level() ->
     N = preamble_acc(),
     10 * math:log10((math:pow(F1, 2) + math:pow(F2, 2) + math:pow(F3, 2))/math:pow(N, 2)) - A.
 
--spec change_channel(Channel) -> Preamblecode when
-      Channel      :: ieee802154:channel(),
-      Preamblecode :: 1 | 3 | 5 | 7. % temporary
-change_channel(Channel) ->
+-spec set_channel(Channel, PCode) -> ok when
+      Channel :: phy_channel(),
+      PCode   :: preamble_code().
+set_channel(Channel, PCode) ->
     write(rf_conf, #{rf_txctrl => ?RF_TXCTRL(Channel),
                      rf_rxctrlh => ?RF_RXCTRLH(Channel)}),
     write(tx_cal, #{tc_pgdelay => ?TC_PGDELAY(Channel)}),
     write(fs_ctrl, #{fs_pllcfg => ?FS_PLLCFG(Channel),
                      fs_plltune => ?FS_PLLTUNE(Channel)}),
-    {PCode, _} = ?PCode(Channel),
     write(chan_ctrl, #{tx_chan => Channel,
                        rx_chan => Channel,
                        tx_pcode => PCode,
-                       rx_pcode => PCode}),
-    PCode.
+                       rx_pcode => PCode}).
 
 %--- gen_server Callbacks ------------------------------------------------------
 

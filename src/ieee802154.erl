@@ -189,7 +189,7 @@ reset(SetDefaultPIB) ->
 % In our case, channel page is 4 in all cases (cf. p149 sec. 8.1.2.4)
 -spec scan(Type, Channels, Duration, Security) -> Result when
       Type     :: scan_type(),
-      Channels :: [channel(), ...],
+      Channels :: [phy_channel(), ...],
       Duration :: 0..14,
       Security :: security(),
       Result   :: {scan_status(), scan_result()}.
@@ -198,7 +198,9 @@ scan(Type, Channels, Duration, Security) ->
                               Type,
                               Channels,
                               Duration,
-                              Security}).
+                              Security}, 2500*length(Channels)*4).
+% 2500ms the uppper bound a single scan for a given channel and preamble code
+% Depending on the prf, a channel can have 2 or 4 preamble codes
 
 %--- gen_statem callbacks ------------------------------------------------------
 
@@ -293,19 +295,31 @@ handle_call({reset, SetDefaultPIB}, _From, State) ->
                end,
     NewDCState = gen_duty_cycle:turn_off(DCState),
     {reply, ok, NewState#{duty_cycle => NewDCState, ranging => ?DISABLED}};
-handle_call({scan, Type, Channels, Duration, Security}, _From, State) ->
+handle_call({scan, Type, Channels, Duration, _Security}, _From, State) ->
+    % For now, we concider that the device always has the capacity to store all
+    % the results. Might change later
     #{phy_layer := PhyMod, attributes := Attributes} = State,
     ScanDurationSymb = ?aBaseSuperframeDuration * (math:pow(2, Duration)+1),
-    ScanDurationMicroSec = round(ScanDurationSymb * ?SymbToMicroSec),
-    #{rxfwto := RXFWTO} = PhyMod:read(rx_fwto),
-    setup_scan(Type, ScanDurationMicroSec, PhyMod),
-    {ScanStatus, NewState, ScanResults} = scan_channels(State,
-                                                        Type,
-                                                        Channels,
-                                                        Security,
-                                                        []),
-    teardown_scan(Type, Attributes, RXFWTO, PhyMod),
-    {reply, {ScanStatus, ScanResults}, NewState};
+    ScanDurationMS = round(ScanDurationSymb * ?SymbToMicroSec),
+    NewAttributes = setup_scan(State, Type),
+    Result = lists:map(fun(Channel) ->
+                               do_scan(PhyMod, Type, ScanDurationMS, Channel)
+                       end, Channels),
+    NewState = teardown_scan(NewAttributes, Type, Attributes),
+    ResultSize = length(Result),
+    ScanResult = case Type of
+                     ed ->
+                         #scan_result{result_list_size = ResultSize,
+                                      uwb_en_det_list = Result};
+                     _ ->
+                         #scan_result{result_list_size = ResultSize,
+                                      pan_descr_list = Result}
+                 end,
+    ScanStatus = case ResultSize of
+                     0 -> no_beacon;
+                     _ -> ok
+                 end,
+    {reply, {ScanStatus, ScanResult}, NewState};
 handle_call(_Request, _From, _State) ->
     error(call_not_recognized).
 
@@ -313,88 +327,101 @@ handle_cast(_, _) ->
     error(not_implemented).
 
 %--- Internal ------------------------------------------------------------------
-%--- Internal: Scan
--spec setup_scan(Type, ScanDuration, PhyMod) -> ok when
-      Type         :: scan_type(),
-      ScanDuration :: microseconds(),
-      PhyMod       :: module().
-setup_scan(Type, ScanDuration, PhyMod) when Type == active
-                                       orelse Type == passive ->
+%--- Internal: Scan setup/teardown
+-spec setup_scan(State, Type) -> NewState when
+      State    :: state(),
+      Type     :: scan_type(),
+      NewState :: state().
+setup_scan(State, ed) ->
+    general_scan_setup(State),
+    State;
+setup_scan(State, Type) when Type == active orelse Type == passive ->
+    #{phy_layer := PhyMod, attributes := Attributes} = State,
+    general_scan_setup(State),
+    NewAttributes = set(PhyMod, Attributes, mac_pan_id, <<16#FFFF:16>>),
+    State#{attributes => NewAttributes};
+setup_scan(_, _) ->
+    error(not_implemented).
+
+general_scan_setup(State) ->
+    #{phy_layer := PhyMod} = State,
     PhyMod:write(sys_cfg, #{ffab => 1,
                             ffad => 0,
                             ffaa => 0,
                             ffam => 1,
                             ffen => 1,
                             autoack => 0,
-                            rxwtoe => 1}),
-    PhyMod:write(panadr, #{pan_id => <<16#FFFF:16>>}),
-    PhyMod:write(rx_fwto, #{rxfwto => ScanDuration});
-setup_scan(_, _, _) ->
-    ok.
+                            rxwtoe => 1}).
 
--spec teardown_scan(Type, Attributes, RXFWTO, PhyMod) -> ok when
-      Type       :: scan_type(),
-      Attributes :: pib_attributes(),
-      RXFWTO     :: non_neg_integer(),
-      PhyMod     :: module().
-teardown_scan(Type, Attributes, RXFWTO, PhyMod) when Type == active
+-spec teardown_scan(State, Type, OldAttributes) -> ok when
+      State         :: state(),
+      Type          :: scan_type(),
+      OldAttributes :: pib_attributes().
+teardown_scan(State, ed, _OldAttributes) ->
+    general_scan_teardown(State);
+teardown_scan(State, Type, OldAttributes) when Type == active
                                                 orelse Type == passive ->
+    #{phy_layer := PhyMod, attributes := Attributes} = State,
+    general_scan_teardown(State),
+    {ok, PanId} = get(PhyMod, OldAttributes, mac_pan_id),
+    set(PhyMod, Attributes, mac_pan_id, PanId);
+teardown_scan(_, _, _) ->
+    error(not_implemented).
+
+general_scan_teardown(State) ->
+    #{phy_layer := PhyMod} = State,
     PhyMod:write(sys_cfg, #{ffab => 1,
                             ffad => 1,
                             ffaa => 1,
                             ffam => 1,
                             ffen => 1,
                             autoack => 0,
-                            rxwtoe => 1}),
-    {ok, PanId} = get(PhyMod, Attributes, mac_pan_id),
-    PhyMod:write(panadr, #{pan_id => PanId}),
-    PhyMod:write(rx_fwto, #{rxfwto => RXFWTO});
-teardown_scan(_, _, _, _) ->
-    ok.
+                            rxwtoe => 1}).
 
--spec scan_channels(State, Type, Channels, Security, Acc) -> Result when
-      State    :: state(),
-      Type     :: scan_type(),
-      Channels :: [channel()],
-      Security :: security(),
-      Acc      :: [pan_descr()] | [integer()],
-      Result   :: {scan_status(), state(), scan_result()}.
-scan_channels(State, _, [], _, []) ->
-    {no_beacon, State, #scan_result{}};
-scan_channels(State, Type, [], _, Acc) ->
-    case Type of
-        ed -> {ok, State, #scan_result{result_list_size = length(Acc),
-                                       uwb_en_det_list = Acc}};
-        _ -> {ok, State, #scan_result{result_list_size = length(Acc),
-                                      pan_descr_list = Acc}}
-    end;
-scan_channels(State, Type, [Channel | Tail], Security, Acc) ->
-    case do_scan(State, Type, Channel, Security) of
-        {ok, NewState, empty} ->
-            scan_channels(NewState, Type, Tail, Security, Acc);
-        {ok, NewState, PanDesc} ->
-            scan_channels(NewState, Type, Tail, Security, [PanDesc | Acc]);
-        {error, NewState, beacon_tx_error} ->
-            scan_channels(NewState, Type, Tail, Security, Acc)
-    end.
+%--- Internal: Performing Scan
 
--spec do_scan(State, Type, Channel, Security) -> Result when
-      State    :: state(),
-      Type     :: scan_type(),
-      Channel  :: channel(),
-      Security :: security(),
-      Result   :: {ok, State, PanDesc}
-                | {ok, State, empty}
-                | {error, State, beacon_tx_error},
-      PanDesc  :: pan_descr().
-do_scan(State, active, Channel, _Security) ->
-    % TODO: Scan has to be performed on each preamble code of the channel
-    #{phy_layer := PhyMod} = State,
-    PreambleCode = PhyMod:change_channel(Channel),
-    DCState2 = send_beacon_request(State),
-    receive_beacon(DCState2, Channel, [PreambleCode]);
+-spec do_scan(PhyMod, Type, Duration, Channel) -> Result when
+      PhyMod :: module(),
+      Type   :: scan_type(),
+      Duration :: miliseconds(),
+      Channel :: phy_channel(),
+      Result   :: [] | [integer()] | [pan_descr()].
+do_scan(PhyMod, ed, Duration, Channel) ->
+    PRF = PhyMod:prf_value(),
+    PreambleCodes = ?PCode(Channel, PRF),
+    lists:foldl(
+      fun(PCode, Acc) ->
+              PhyMod:set_channel(Channel, PCode),
+              Now = erlang:timestamp(),
+              Noise = do_ed(PhyMod, Channel, Duration, Now, -0.0, -0.0),
+              max(Acc, Noise)
+      end, -0.0, PreambleCodes);
 do_scan(_, _, _, _) ->
-    error(scan_not_implemented).
+    error(not_implemented).
+
+%--- Internal: ED scan
+-spec do_ed(PhyMod, Channel, D, TStart, Elapsed, Acc) -> EDMeasurement when
+      PhyMod        :: module(),
+      Channel       :: phy_channel(),
+      D             :: miliseconds(),
+      TStart        :: erlang:timestamp(),
+      Elapsed       :: integer(),
+      Acc           :: float(),
+      EDMeasurement :: float().
+do_ed(_, _, D, _, Elapsed, Acc) when Elapsed >= D ->
+    Acc;
+do_ed(PhyMod, Channel, D, TStart, _Elapsed, Acc) ->
+    PhyMod:write(agc_ctrl, #{agc_ctrl1 => #{dis_am => 2#0}}),
+    PhyMod:write(sys_ctrl, #{rxenab => 2#1}),
+    timer:sleep(1),
+    PhyMod:write(agc_ctrl, #{agc_ctrl1 => #{dis_am => 2#1}}),
+    PhyMod:write(sys_ctrl, #{trxoff => 2#1}),
+    #{agc_stat1 := #{edv2 := EDV2, edg1 := EDG1}} = PhyMod:read(agc_ctrl),
+    ApproxNoise = (EDV2 - 40) * math:pow(10, EDG1) * ?SCH(Channel),
+    TNow = erlang:timestamp(),
+    NowDiff = timer:now_diff(TNow, TStart),
+    NewAcc = max(Acc, ApproxNoise),
+    do_ed(PhyMod, Channel, D, TStart, NowDiff, NewAcc).
 
 -spec send_beacon_request(State) -> Result when
       State :: state(),
@@ -415,7 +442,7 @@ send_beacon_request(State) ->
 
 -spec receive_beacon(ReqRes, Channel, PreambleCodes) -> Result when
       ReqRes        :: {ok, State} | {error, State},
-      Channel       :: channel(),
+      Channel       :: phy_channel(),
       PreambleCodes :: [integer()],
       State         :: state(),
       Result        :: {ok, State, PanDesc}
@@ -438,7 +465,7 @@ receive_beacon({error, State}, _, _) ->
 
 -spec pan_descr(Frame, ChannelNbr, Timestamp, PreambleCodes) -> pan_descr() when
       Frame         :: binary(),
-      ChannelNbr    :: channel(),
+      ChannelNbr    :: phy_channel(),
       Timestamp     :: non_neg_integer(),
       PreambleCodes :: [preamble_code()].
 pan_descr(Frame, ChannelNbr, Timestamp, PreambleCodes) ->

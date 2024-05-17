@@ -45,7 +45,7 @@
 -record (pan_descr, {coord_addr_mode   :: mac_frame:addr_mode(),
                      coord_pan_id      :: <<_:16>>,
                      coord_addr        :: <<_:16>> | <<_:64>>,
-                     channel_nbr       :: channel(),
+                     channel_nbr       :: non_neg_integer(), % TODO find the correct channels
                      channel_page = 4  :: 4,
                      superframe_specs  :: mac_frame:superframe_specs(),
                      gts_permit        :: boolean(),
@@ -62,7 +62,7 @@
 -record(scan_result, {unscanned_channels = [] :: [integer()],
                       result_list_size   = 0  :: non_neg_integer(),
                       pan_descr_list     = [] :: [pan_descr()],
-                      detected_cat       = 1  :: non_neg_integer(),
+                      detected_cat       = 1  :: 1 | 2,
                       uwb_en_det_list    = [] :: [integer()]}).
 
 -type scan_result() :: #scan_result{}.
@@ -111,11 +111,6 @@
 
 -type scan_type() :: ed | active | passive | orphan.
 
-%% @doc Supported channels by the DW1000
-%% @end
--type channel() :: 1 | 2 | 3 | 4 | 5 | 7.
-
--type preamble_code() ::  1..8.
 % ok <=> SUCCESS
 -type scan_status() :: ok
                      | limit_reached
