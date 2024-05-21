@@ -10,14 +10,9 @@ permissions:
   contents: read
 
 jobs:
-
-  build:
-
+  ci:
     runs-on: ubuntu-latest
-
-    container:
-      image: erlang:22.0.7
-
+    name: Dialyzer and unit tests
     steps:
     - uses: actions/checkout@v3
     - name: Compile
