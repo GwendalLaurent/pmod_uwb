@@ -34,30 +34,14 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -include("ieee802154.hrl").
+-include("ieee802154_pib.hrl").
 -include("mac_frame.hrl").
 
 %--- Types ---------------------------------------------------------------------
--type pib_attribute() :: cw0
-                       | mac_extended_address
-                       | mac_max_BE
-                       | mac_min_BE
-                       | mac_max_csma_backoffs
-                       | mac_pan_id
-                       | mac_short_address.
-
--type pib_attributes() :: #{cw0 := cw0(),
-                            mac_extended_address := mac_extended_address(),
-                            mac_max_BE := mac_max_BE(),
-                            mac_min_BE := mac_max_BE(),
-                            mac_max_csma_backoffs := mac_max_csma_backoff(),
-                            mac_pan_id := mac_pan_id(),
-                            mac_short_address := mac_short_address()}.
-
--type pib_set_error() :: read_only | unsupported_attribute | invalid_parameter.
 
 -type state() :: #{phy_layer := module(),
                    duty_cycle := gen_duty_cycle:state(),
-                   attributes := pib_attributes(),
+                   pib := pib_state(),
                    input_callback := input_callback(),
                    _:=_}.
 
@@ -217,7 +201,7 @@ init(Params) ->
 
     Data = #{phy_layer => PhyMod,
              duty_cycle => DutyCycleState,
-             attributes => default_attribute_values(),
+             pib => ieee802154_pib:init(PhyMod),
              ranging => ?DISABLED,
              input_callback => Params#ieee_parameters.input_callback},
     {ok, Data}.
@@ -251,11 +235,10 @@ handle_call({rx_off}, _From, #{duty_cycle := DCState} = State) ->
     NewDCState = gen_duty_cycle:turn_off(DCState),
     {reply, ok, State#{duty_cycle => NewDCState}};
 handle_call({tx, Frame, Ranging}, _From, State) ->
-    #{duty_cycle := DCState, attributes := Attributes} = State,
-    CsmaParams = get_csma_params(Attributes),
+    #{duty_cycle := DCState, pib := Pib} = State,
     {FrameControl, MacHeader, Payload} = Frame,
     EncFrame = mac_frame:encode(FrameControl, MacHeader, Payload),
-    case gen_duty_cycle:tx_request(DCState, EncFrame, CsmaParams, Ranging) of
+    case gen_duty_cycle:tx_request(DCState, EncFrame, Pib, Ranging) of
         {ok, NewDCState, RangingInfos} ->
             {reply, {ok, RangingInfos}, State#{duty_cycle => NewDCState}};
         {error, NewDCState, Error} ->
@@ -270,28 +253,28 @@ handle_call({rx}, _From, #{duty_cycle := DutyCycleState} = State) ->
             {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState}}
     end;
 handle_call({get, Attribute}, _From, State) ->
-    #{phy_layer := PhyMod, attributes := Attributes} = State,
-    case get(PhyMod, Attributes, Attribute) of
-        {ok, Value} ->
-            {reply, Value, State};
+    #{pib := Pib} = State,
+    case ieee802154_pib:get(Pib, Attribute) of
         {error, Error} ->
-            {reply, {error, Error}, State}
+            {reply, {error, Error}, State};
+        Value ->
+            {reply, Value, State}
     end;
 handle_call({set, Attribute, Value}, _From, State) ->
-    #{phy_layer := PhyMod, attributes := Attributes} = State,
-    case set(PhyMod, Attributes, Attribute, Value) of
-        {ok, NewAttributes} ->
-            {reply, ok, State#{attributes => NewAttributes}};
-        {error, Error} ->
-            {reply, {error, Error}, State}
+    #{pib := Pib} = State,
+    case ieee802154_pib:set(Pib, Attribute, Value) of
+        {ok, NewPib} ->
+            {reply, ok, State#{pib => NewPib}};
+        {error, NewPib, Error} ->
+            {reply, {error, Error}, State#{pib => NewPib}}
     end;
 handle_call({reset, SetDefaultPIB}, _From, State) ->
-    #{phy_layer := PhyMod, duty_cycle := DCState} = State,
+    #{phy_layer := PhyMod, pib := Pib, duty_cycle := DCState} = State,
     NewState = case SetDefaultPIB of
                    true ->
                        PhyMod:write(panadr, #{pan_id => <<16#FFFF:16>>,
                                               short_addr => <<16#FFFF:16>>}),
-                       State#{attributes => default_attribute_values()};
+                       State#{pib => ieee802154_pib:reset(Pib)};
                    _ ->
                        State
                end,
@@ -314,67 +297,3 @@ write_default_conf(PhyMod) ->
                             ffen => 1,
                             autoack => 1,
                             rxwtoe => 1}).
-
--spec default_attribute_values() -> Attributes when
-      Attributes   :: #{cw0 := 2,
-                     mac_extended_address := <<_:64>>,
-                      mac_max_BE := 5,
-                      mac_max_csma_backoffs := 4,
-                      mac_min_BE := 3,
-                      mac_pan_id := <<_:16>>,
-                      mac_short_address := <<_:16>>}.
-default_attribute_values() ->
-    #{
-      cw0 => 2, % cf. p.22 standard
-      mac_extended_address => <<16#FFFFFFFF00000000:64>>,
-      mac_max_BE => 5,
-      mac_max_csma_backoffs => 4,
-      mac_min_BE => 3,
-      mac_pan_id => <<16#FFFF:16>>,
-      mac_short_address => <<16#FFFF:16>>
-     }.
-
--spec get_csma_params(Attributes) -> CsmaParams when
-      Attributes :: pib_attributes(),
-      CsmaParams :: csma_params().
-get_csma_params(Attributes) ->
-    #csma_params{mac_min_BE = maps:get(mac_min_BE, Attributes),
-                 mac_max_BE = maps:get(mac_max_BE, Attributes),
-                 mac_max_csma_backoff = maps:get(mac_max_csma_backoffs,
-                                                 Attributes),
-                 cw0 = maps:get(cw0, Attributes)}.
-
-%--- Internal: getter/setter PiB
--spec get(PhyMod, Attributes, Attribute) -> Result  when
-    PhyMod     :: module(),
-    Attributes :: pib_attributes(),
-    Attribute  :: pib_attribute(),
-    Result     :: {ok, Value} | {error, unsupported_attribute},
-    Value      :: term().
-get(_PhyMod, Attributes, Attribute) when is_map_key(Attribute, Attributes) ->
-    {ok, maps:get(Attribute, Attributes)};
-get(_, _, _) ->
-    {error, unsupported_attribute}.
-
--spec set(PhyMod, Attributes, Attribute, Value) -> Results when
-    PhyMod        :: module(),
-    Attributes    :: pib_attributes(),
-    Attribute     :: pib_attribute(),
-    Value         :: term(),
-    Results       :: {ok, NewAttributes} | {error, Error},
-    NewAttributes :: pib_attributes(),
-    Error         :: pib_set_error().
-set(PhyMod, Attributes, mac_extended_address, Value) ->
-    PhyMod:write(eui, #{eui => Value}), % TODO check the range/type/value given
-    {ok, Attributes#{mac_extended_address => Value}};
-set(PhyMod, Attributes, mac_short_address, Value) ->
-    PhyMod:write(panadr, #{short_addr => Value}),
-    {ok, Attributes#{mac_short_address => Value}};
-set(PhyMod, Attributes, mac_pan_id, Value) ->
-    PhyMod:write(panadr, #{pan_id => Value}),
-    {ok, Attributes#{mac_pan_id => Value}};
-set(_, Attributes, Attribute, Value) when is_map_key(Attribute, Attributes) ->
-    NewAttributes = maps:update(Attribute, Value, Attributes),
-    {ok, NewAttributes};
-set(_, _, _, _) ->
-    {error, unsupported_attribute}. % TODO detect if PIB is a read only attribute

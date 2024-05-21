@@ -9,13 +9,14 @@
 
 -include("pmod_uwb.hrl").
 -include("ieee802154.hrl").
+-include("ieee802154_pib.hrl").
 
 %--- Callbacks -----------------------------------------------------------------
 
 -callback init(PhyMod::module()) -> State::term().
 -callback tx(State::term(),
              Frame::bitstring(),
-             CsmaParams::csma_params(),
+             Pib  :: pib_state(),
              TxOptions::#tx_opts{}) -> {ok, Newstate::term()}
                                        | {error,
                                           Newstate::term(),
@@ -36,15 +37,15 @@
 start(Module, PhyMod) ->
     {Module, Module:init(PhyMod)}.
 
--spec transmit(State, Frame, CsmaParams, TxOptions) -> Result when
-      State              :: state(),
-      Frame              :: bitstring(),
-      CsmaParams         :: csma_params(),
-      TxOptions          :: tx_opts(),
-      Result             :: {ok, State} | {error, State, Error},
-      Error              :: tx_error().
-transmit({Module, Sub}, Frame, CsmaParams, TxOptions) ->
-    case Module:tx(Sub, Frame, CsmaParams, TxOptions) of
+-spec transmit(State, Frame, Pib, TxOptions) -> Result when
+      State     :: state(),
+      Frame     :: bitstring(),
+      Pib       :: pib_state(),
+      TxOptions :: tx_opts(),
+      Result    :: {ok, State} | {error, State, Error},
+      Error     :: tx_error().
+transmit({Module, Sub}, Frame, Pib, TxOptions) ->
+    case Module:tx(Sub, Frame, Pib, TxOptions) of
         {ok, Sub2} -> {ok, {Module, Sub2}};
         {error, Sub2, Error} -> {error, {Module, Sub2}, Error}
     end.

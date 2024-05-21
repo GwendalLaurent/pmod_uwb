@@ -41,20 +41,8 @@
 
 -type security() :: #security{}.
 
--record(csma_params, {mac_min_BE           :: mac_min_BE(),
-                      mac_max_BE           :: mac_max_BE(),
-                      mac_max_csma_backoff :: mac_max_csma_backoff(),
-                      cw0                  :: cw0()}).
-
 %--- IEEE 802.15.4 parameter types
 -export_type([ieee_parameters/0, ranging_informations/0, security/0, input_callback/0, ranging_tx/0, tx_error/0]).
--type cw0() :: 1 | 2.
--type mac_extended_address() :: <<_:64>>.
--type mac_max_BE() :: 3..8.
--type mac_max_csma_backoff() :: 0..5.
--type mac_min_BE() :: 0..8.
--type mac_pan_id() :: <<_:16>>.
--type mac_short_address() :: <<_:16>>.
 
 -type ranging_received() :: ?NO_RANGING_REQUESTED | ?RANGING_REQUESTED_BUT_NOT_SUPPORTED | ?RANGING_ACTIVE.
 -type ranging_tx() :: ?NON_RANGING | ?ALL_RANGING. % PHY_HEADER_ONLY no used in our case
@@ -70,7 +58,5 @@
                               -> ok).
 
 -type ieee_parameters() :: #ieee_parameters{}.
-
--type csma_params() :: #csma_params{}.
 
 -type tx_error() :: invalid_address | invalid_gts | transaction_overflow | transaction_expired | no_ack | frame_too_long | channel_access_failure.
