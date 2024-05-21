@@ -19,13 +19,14 @@
 
 -include("ieee802154.hrl").
 -include("ieee802154_pib.hrl").
+-include("pmod_uwb.hrl").
 
 -callback init(PhyModule) -> State when
       PhyModule :: module(),
       State     :: term().
 -callback on(State, Callback, Ranging) -> Result when
       State       :: term(),
-      Callback    :: gen_mac_rx:input_callback_raw_frame(),
+      Callback    :: input_callback_raw_frame(),
       Ranging     :: boolean(),
       Result      :: {ok, State}
                      | {error, State, Error},
@@ -67,10 +68,10 @@
 
 -type input_callback_raw_frame() :: fun((Frame                  :: binary(),
                                          LQI                    :: integer(),
-                                         UWBPRF                 :: pmod_uwb:uwb_PRF(),
+                                         UWBPRF                 :: uwb_PRF(),
                                          Security               :: ieee802154:security(),
-                                         UWBPreambleRepetitions :: pmod_uwb:uwb_preamble_symbol_repetition(),
-                                         DataRate               :: pmod_uwb:data_rate(),
+                                         UWBPreambleRepetitions :: uwb_preamble_symbol_repetition(),
+                                         DataRate               :: data_rate(),
                                          Ranging                :: ieee802154:ranging_informations())
                                         -> ok).
 

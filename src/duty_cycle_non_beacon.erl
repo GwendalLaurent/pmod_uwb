@@ -58,7 +58,7 @@ init(PhyMod) ->
 
 -spec on(State, Callback, Ranging) -> Result when
       State    :: state(),
-      Callback :: gen_mac_rx:input_callback_raw_frame(),
+      Callback :: gen_duty_cycle:input_callback_raw_frame(),
       Ranging  :: boolean(),
       Result   :: {ok, State} | {error, State, rx_already_on}.
 on(#state{loop_pid = undefined} = State, Callback, Ranging) ->
