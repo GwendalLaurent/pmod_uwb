@@ -7,7 +7,6 @@
 
 -include("ieee802154_pib.hrl").
 
-%--- Types --------------------------------------------------------------------
 %--- API ----------------------------------------------------------------------
 
 init(PhyMod) ->
@@ -18,7 +17,7 @@ init(PhyMod) ->
     Attribute  :: pib_attribute(),
     Result     :: Value | {error, unsupported_attribute},
     Value      :: term().
-get({_PhyMod, Attributes} = State, Attribute) when is_map_key(Attribute, Attributes) ->
+get({_, Attributes}, Attribute) when is_map_key(Attribute, Attributes) ->
     maps:get(Attribute, Attributes);
 get(_, _) ->
     {error, unsupported_attribute}.
@@ -41,11 +40,13 @@ set({PhyMod, Attributes}, mac_short_address, Value) ->
 set({PhyMod, Attributes}, mac_pan_id, Value) ->
     PhyMod:write(panadr, #{pan_id => Value}),
     {ok, {PhyMod, Attributes#{mac_pan_id => Value}}};
-set({PhyMod, Attributes}, Attribute, Value) when is_map_key(Attribute, Attributes) ->
+set({PhyMod, Attributes}, Attribute, Value)
+  when is_map_key(Attribute, Attributes) ->
     NewAttributes = maps:update(Attribute, Value, Attributes),
     {ok, {PhyMod, NewAttributes}};
 set(State, _, _) ->
-    {error, State, unsupported_attribute}. % TODO detect if PIB is a read only attribute
+    % TODO detect if PIB is a read only attribute
+    {error, State, unsupported_attribute}.
 
 reset({PhyMod, _}) ->
     {PhyMod, default_attributes()}.
