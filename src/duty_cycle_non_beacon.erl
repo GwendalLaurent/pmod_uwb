@@ -156,7 +156,7 @@ rx_(PhyMod) ->
 -spec rx_loop(PhyMod, Callback, Ranging) -> ok when
       PhyMod :: module(),
       Callback :: gen_duty_cycle:input_callback_raw_frame(),
-      Ranging :: pmod_uwb:flag().
+      Ranging :: flag().
 rx_loop(PhyMod, Callback, Ranging) ->
     case rx_(PhyMod) of
         {ok, Frame} ->

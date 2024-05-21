@@ -91,7 +91,7 @@ start(Module, PhyModule) ->
 -spec turn_on(State, Callback, Ranging) -> Result when
       State    :: state(),
       Callback :: input_callback_raw_frame(),
-      Ranging  :: pmod_uwb:flag(),
+      Ranging  :: flag(),
       Result   :: {ok, State} | {error, State, Error},
       Error    :: atom().
 turn_on({Mod, Sub}, Callback, Ranging) ->
