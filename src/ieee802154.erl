@@ -255,10 +255,10 @@ handle_call({rx}, _From, #{duty_cycle := DutyCycleState} = State) ->
 handle_call({get, Attribute}, _From, State) ->
     #{pib := Pib} = State,
     case ieee802154_pib:get(Pib, Attribute) of
-        {ok, Value} ->
-            {reply, Value, State};
         {error, Error} ->
-            {reply, {error, Error}, State}
+            {reply, {error, Error}, State};
+        Value ->
+            {reply, Value, State}
     end;
 handle_call({set, Attribute, Value}, _From, State) ->
     #{pib := Pib} = State,
