@@ -14,6 +14,7 @@
 % Include
 
 -include("mac_frame.hrl").
+-include("ieee802154_pib.hrl").
 -include("ieee802154.hrl").
 
 %% @doc
@@ -78,7 +79,7 @@ off(#state{phy_layer = PhyMod, loop_pid = LoopPid} = State) ->
 -spec tx(State, Frame, CsmaParams, Ranging) -> Result when
     State       :: state(),
     Frame       :: binary(),
-    CsmaParams  :: csma_params(),
+    CsmaParams  :: pib_state(),
     Ranging     :: ranging_tx(),
     Result      :: {ok, State, RangingInfo}
                    | {error, State, Error},
@@ -219,17 +220,17 @@ resume_rx_loop(State) ->
     rx_loop_on(State, Ranging).
 
 % @private
--spec tx_(State, Frame, CsmaParams, Ranging) -> Result when
-      State      :: state(),
-      Frame      :: bitstring(),
-      CsmaParams :: csma_params(),
-      Ranging    :: ranging_tx(),
-      Result     :: {ok, MacTXState} | {error, MacTXState, Error},
-      Error      :: atom().
-tx_(State, <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/binary>> = Frame, CsmaParams, Ranging) ->
+-spec tx_(State, Frame, Pib, Ranging) -> Result when
+      State   :: state(),
+      Frame   :: bitstring(),
+      Pib     :: pib_state(),
+      Ranging :: ranging_tx(),
+      Result  :: {ok, MacTXState} | {error, MacTXState, Error},
+      Error   :: atom().
+tx_(State, <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/binary>> = Frame, Pib, Ranging) ->
     MacTXState = State#state.mac_tx_state,
     PhyMod = State#state.phy_layer,
-    tx_ar(MacTXState, PhyMod, Frame, Seqnum, 0, CsmaParams, Ranging);
+    tx_ar(MacTXState, PhyMod, Frame, Seqnum, 0, Pib, Ranging);
 tx_(State, Frame, CsmaParams, Ranging) ->
     MacTXState = State#state.mac_tx_state,
     TxOpts = #tx_opts{ranging = Ranging},
@@ -241,21 +242,21 @@ tx_(State, Frame, CsmaParams, Ranging) ->
 % If the frame has been transmitted MACMAXFRAMERETRIES times then the error
 % `no_ack' is returned
 % @end
--spec tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, CsmaParams, Ranging) -> Result when
-      MacTXState         :: gen_mac_tx:state(),
-      PhyMod             :: module(),
-      Frame              :: bitstring(),
-      Seqnum             :: non_neg_integer(),
-      Retry              :: non_neg_integer(),
-      CsmaParams         :: csma_params(),
-      Ranging            :: ranging_tx(),
-      Result             :: {ok, MacTxState} | {error, MacTxState, Error},
-      Error              :: atom().
+-spec tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, Pib, Ranging) -> Result when
+      MacTXState :: gen_mac_tx:state(),
+      PhyMod     :: module(),
+      Frame      :: bitstring(),
+      Seqnum     :: non_neg_integer(),
+      Retry      :: non_neg_integer(),
+      Pib        :: pib_state(),
+      Ranging    :: ranging_tx(),
+      Result     :: {ok, MacTxState} | {error, MacTxState, Error},
+      Error      :: atom().
 tx_ar(MacTxState, _, _, _, ?MACMAXFRAMERETRIES, _, _) ->
     {error, MacTxState, no_ack};
-tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, CsmaParams, Ranging) ->
+tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, Pib, Ranging) ->
     TxOpts = #tx_opts{wait4resp = ?ENABLED, ranging = Ranging},
-    case gen_mac_tx:transmit(MacTXState, Frame, CsmaParams, TxOpts) of
+    case gen_mac_tx:transmit(MacTXState, Frame, Pib, TxOpts) of
         {ok, NewMacTxState} ->
             case PhyMod:reception(true) of
                 {_, <<_:16, Seqnum:8>>} -> {ok, NewMacTxState};
@@ -264,7 +265,7 @@ tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, CsmaParams, Ranging) ->
                             Frame,
                             Seqnum,
                             Retry+1,
-                            CsmaParams,
+                            Pib,
                             Ranging)
             end;
         {error, NewMacTxState, _Error} ->
@@ -273,7 +274,7 @@ tx_ar(MacTXState, PhyMod, Frame, Seqnum, Retry, CsmaParams, Ranging) ->
                   Frame,
                   Seqnum,
                   Retry+1,
-                  CsmaParams,
+                  Pib,
                   Ranging)
     end.
 
@@ -329,5 +330,3 @@ tx_ranging_infos(?ENABLED, State) ->
        ranging_offset = RXTOFS,
        ranging_FOM = <<0:8>>
       }.
-
-

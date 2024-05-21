@@ -2,6 +2,7 @@
 -module(unslotted_CSMA).
 
 -include("ieee802154.hrl").
+-include("ieee802154_pib.hrl").
 -include("pmod_uwb.hrl").
 
 -behaviour(gen_mac_tx).
@@ -37,16 +38,16 @@ init(PhyMod) -> #{phy_layer => PhyMod}.
 %% @param MacMinBE: The minimum value of the backoff exponent as described in the standard
 %% @param MacMaxCSMABackoffs: The maximum amount of time the CSMA algorithm will backoff if the channel is busy
 %% @param CW0: Not needed in this version of the algorithm. Ignored by this function
--spec tx(State, Frame, CsmaParams, TxOpts) -> {ok, State} | {error, State, channel_access_failure} when
-      State              :: map(),
-      Frame              :: bitstring(),
-      CsmaParams         :: csma_params(),
-      TxOpts             :: tx_opts().
-tx(#{phy_layer := PhyMod} = State, Frame, CsmaParams, TxOpts) ->
+-spec tx(State, Frame, Pib, TxOpts) -> {ok, State} | {error, State, channel_access_failure} when
+      State  :: map(),
+      Frame  :: bitstring(),
+      Pib    :: pib_state(),
+      TxOpts :: tx_opts().
+tx(#{phy_layer := PhyMod} = State, Frame, Pib, TxOpts) ->
     PhyMod:set_preamble_timeout(?CCA_DURATION),
-    MacMinBE = CsmaParams#csma_params.mac_min_BE,
-    MacMaxBE = CsmaParams#csma_params.mac_max_BE,
-    MacMaxCSMABackoffs = CsmaParams#csma_params.mac_max_csma_backoff,
+    MacMinBE = ieee802154_pib:get(Pib, mac_min_BE),
+    MacMaxBE = ieee802154_pib:get(Pib, mac_max_BE),
+    MacMaxCSMABackoffs = ieee802154_pib:get(Pib, mac_max_csma_backoffs),
     Ret = case try_cca(PhyMod, 0, MacMinBE, MacMaxBE, MacMaxCSMABackoffs) of
               ok ->
                   PhyMod:transmit(Frame, TxOpts),

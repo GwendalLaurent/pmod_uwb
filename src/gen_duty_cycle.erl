@@ -18,6 +18,7 @@
 -module(gen_duty_cycle).
 
 -include("ieee802154.hrl").
+-include("ieee802154_pib.hrl").
 
 -callback init(PhyModule) -> State when
       PhyModule :: module(),
@@ -32,10 +33,10 @@
 -callback off(State) -> {ok, State} when
       State :: term().
 % Add suspend and resume later
--callback tx(State, Frame, CsmaParams, Ranging) -> Result when
-      State :: term(),
-      Frame :: bitstring(),
-      CsmaParams  :: csma_params(),
+-callback tx(State, Frame, Pib, Ranging) -> Result when
+      State       :: term(),
+      Frame       :: bitstring(),
+      Pib         :: pib_state(),
       Ranging     :: ranging_tx(),
       Result      :: {ok, State, RangingInfo}
                     | {error, State, Error},
@@ -114,18 +115,18 @@ turn_off({Mod, Sub}) ->
 % <li> `frame_too_long': The frame was too long for the CAP or GTS</li>
 % <li> `channel_access_failure': the CSMA-CA algorithm failed</li>
 % @end
--spec tx_request(State, Frame, CsmaParams, Ranging) -> Result when
+-spec tx_request(State, Frame, Pib, Ranging) -> Result when
       State       :: state(),
       Frame       :: bitstring(),
-      CsmaParams  :: csma_params(),
+      Pib         :: pib_state(),
       Ranging     :: ranging_tx(),
       State       :: state(),
       Result      :: {ok, State, RangingInfo}
                      | {error, State, Error},
       RangingInfo :: ranging_informations(),
       Error       :: tx_error().
-tx_request({Mod, Sub}, Frame, CsmaParams, Ranging) ->
-    case Mod:tx(Sub, Frame, CsmaParams, Ranging) of
+tx_request({Mod, Sub}, Frame, Pib, Ranging) ->
+    case Mod:tx(Sub, Frame, Pib, Ranging) of
         {ok, Sub2, RangingInfo} ->
             {ok, {Mod, Sub2}, RangingInfo};
         {error, Sub2, Err} ->
