@@ -14,19 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     name: Dialyzer and unit tests
     strategy:
-    matrix:
-      otp:
-        - '26'
-        - '25'
-      rebar3:
-        - '3'
+      matrix:
+        otp:
+          - '26'
+          - '25'
+        rebar3:
+          - '3'
     steps:
       - uses: actions/checkout@v3
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: '25'
-          rebar3-version: '3'
+          otp-version: ${{matix.otp}}
+          rebar3-version: ${{matix.rebar3}}
 
       - uses: actions/cache@v2
         env:
