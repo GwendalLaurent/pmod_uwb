@@ -21,6 +21,7 @@
 -export([set_pib_attribute/2]).
 
 -export([reset/1]).
+-export([scan/4]).
 
 % gen_server callbacks
 -export([init/1]).
@@ -185,6 +186,20 @@ set_pib_attribute(Attribute, Value) ->
 reset(SetDefaultPIB) ->
     gen_server:call(?MODULE, {reset, SetDefaultPIB}).
 
+% In our case, channel page is 4 in all cases (cf. p149 sec. 8.1.2.4)
+-spec scan(Type, Channels, Duration, Security) -> Result when
+      Type     :: scan_type(),
+      Channels :: [channel(), ...],
+      Duration :: 0..14,
+      Security :: security(),
+      Result   :: {scan_status(), scan_result()}.
+scan(Type, Channels, Duration, Security) ->
+    gen_server:call(?MODULE, {scan,
+                              Type,
+                              Channels,
+                              Duration,
+                              Security}).
+
 %--- gen_statem callbacks ------------------------------------------------------
 
 -spec init(Params) -> {ok, State} when
@@ -278,6 +293,19 @@ handle_call({reset, SetDefaultPIB}, _From, State) ->
                end,
     NewDCState = gen_duty_cycle:turn_off(DCState),
     {reply, ok, NewState#{duty_cycle => NewDCState, ranging => ?DISABLED}};
+handle_call({scan, Type, Channels, Duration, Security}, _From, State) ->
+    #{phy_layer := PhyMod} = State,
+    ScanDurationSymb = ?aBaseSuperframeDuration * (math:pow(2, Duration)+1),
+    ScanDurationMicroSec = round(ScanDurationSymb * ?SymbToMicroSec),
+    #{rxfwto := RXFWTO} = PhyMod:read(rx_fwto),
+    setup_scan(Type, ScanDurationMicroSec, PhyMod),
+    {ScanStatus, NewState, ScanResults} = scan_channels(State,
+                                                        Type,
+                                                        Channels,
+                                                        Security,
+                                                        []),
+    teardown_scan(State, Type, RXFWTO, PhyMod),
+    {reply, {ScanStatus, ScanResults}, NewState};
 handle_call(_Request, _From, _State) ->
     error(call_not_recognized).
 
@@ -285,6 +313,150 @@ handle_cast(_, _) ->
     error(not_implemented).
 
 %--- Internal ------------------------------------------------------------------
+%--- Internal: Scan
+-spec setup_scan(Type, ScanDuration, PhyMod) -> ok when
+      Type         :: scan_type(),
+      ScanDuration :: microseconds(),
+      PhyMod       :: module().
+setup_scan(Type, ScanDuration, PhyMod) when Type == active
+                                       orelse Type == passive ->
+    PhyMod:write(sys_cfg, #{ffab => 1,
+                            ffad => 0,
+                            ffaa => 0,
+                            ffam => 1,
+                            ffen => 1,
+                            autoack => 0,
+                            rxwtoe => 1}),
+    PhyMod:write(panadr, #{pan_id => <<16#FFFF:16>>}),
+    PhyMod:write(rx_fwto, #{rxfwto => ScanDuration});
+setup_scan(_, _, _) ->
+    ok.
+
+-spec teardown_scan(State, Type, RXFWTO, PhyMod) -> ok when
+      State  :: state(),
+      Type   :: scan_type(),
+      RXFWTO :: non_neg_integer(),
+      PhyMod :: module().
+teardown_scan(State, Type, RXFWTO, PhyMod) when Type == active
+                                                orelse Type == passive ->
+    #{pib := Pib} = State,
+    PhyMod:write(sys_cfg, #{ffab => 1,
+                            ffad => 1,
+                            ffaa => 1,
+                            ffam => 1,
+                            ffen => 1,
+                            autoack => 0,
+                            rxwtoe => 1}),
+    PanId = ieee802154_pib:get(Pib, mac_pan_id),
+    PhyMod:write(panadr, #{pan_id => PanId}),
+    PhyMod:write(rx_fwto, #{rxfwto => RXFWTO});
+teardown_scan(_, _, _, _) ->
+    ok.
+
+-spec scan_channels(State, Type, Channels, Security, Acc) -> Result when
+      State    :: state(),
+      Type     :: scan_type(),
+      Channels :: [channel()],
+      Security :: security(),
+      Acc      :: [pan_descr()] | [integer()], % Is it going to work even for ed scans ?
+      Result   :: {scan_status(), state(), scan_result()}.
+scan_channels(State, _, [], _, []) ->
+    {no_beacon, State, #scan_result{}};
+scan_channels(State, Type, [], _, Acc) ->
+    case Type of
+        ed -> {ok, State, #scan_result{result_list_size = length(Acc),
+                                       uwb_en_det_list = Acc}};
+        _ -> {ok, State, #scan_result{result_list_size = length(Acc),
+                                      pan_descr_list = Acc}}
+    end;
+scan_channels(State, Type, [Channel | Tail], Security, Acc) ->
+    case do_scan(State, Type, Channel, Security) of
+        {ok, NewState, empty} ->
+            scan_channels(NewState, Type, Tail, Security, Acc);
+        {ok, NewState, PanDesc} ->
+            scan_channels(NewState, Type, Tail, Security, [PanDesc | Acc]);
+        {error, NewState, beacon_tx_error} ->
+            scan_channels(NewState, Type, Tail, Security, Acc)
+    end.
+
+-spec do_scan(State, Type, Channel, Security) -> Result when
+      State    :: state(),
+      Type     :: scan_type(),
+      Channel  :: channel(),
+      Security :: security(),
+      Result   :: {ok, State, PanDesc}
+                | {ok, State, empty}
+                | {error, State, beacon_tx_error},
+      PanDesc  :: pan_descr().
+do_scan(State, active, Channel, _Security) ->
+    % TODO: Scan has to be performed on each preamble code of the channel
+    #{phy_layer := PhyMod} = State,
+    PreambleCode = PhyMod:change_channel(Channel),
+    DCState2 = send_beacon_request(State),
+    receive_beacon(DCState2, Channel, [PreambleCode]);
+do_scan(_, _, _, _) ->
+    error(scan_not_implemented).
+
+-spec send_beacon_request(State) -> Result when
+      State :: state(),
+      Result :: {ok, NewState} | {error, NewState},
+      NewState :: state().
+send_beacon_request(State) ->
+    #{duty_cycle := DCState, pib := Pib} = State,
+    BeacReq = mac_frame:encode_beacon_request(),
+    case gen_duty_cycle:tx_request(DCState, BeacReq, Pib, ?NON_RANGING) of
+        {ok, NewDCState, _} ->
+            {ok, State#{duty_cycle => NewDCState}};
+        {error, NewDCState, channel_access_failure} ->
+            {error, State#{duty_cycle => NewDCState}};
+        {error, _NewDCState, Error} ->
+            error(unexpected_tx_error, [Error])
+    end.
+
+-spec receive_beacon(ReqRes, Channel, PreambleCodes) -> Result when
+      ReqRes        :: {ok, State} | {error, State},
+      Channel       :: channel(),
+      PreambleCodes :: [integer()],
+      State         :: state(),
+      Result        :: {ok, State, PanDesc}
+                     | {ok, State, empty}
+                     | {error, State, beacon_tx_error},
+      PanDesc       :: pan_descr().
+receive_beacon({ok, State}, Channel, PreambleCodes) ->
+    #{duty_cycle := DCState} = State,
+    case gen_duty_cycle:rx_request(DCState) of
+        {ok, NewDCState, Frame} ->
+            PanDesc = pan_descr(Frame, Channel, 0, PreambleCodes),
+            {ok, State#{duty_cycle => NewDCState}, PanDesc};
+        {error, NewDCState, rxfwto} ->
+            {ok, State#{duty_cycle => NewDCState}, empty};
+        {error, _NewDCState, Error} ->
+            error(unexpected_rx_error, [Error]) % ! Might have other t.o., how should it be handled ?
+    end;
+receive_beacon({error, State}, _, _) ->
+    {error, State, beacon_tx_error}.
+
+-spec pan_descr(Frame, ChannelNbr, Timestamp, PreambleCodes) -> pan_descr() when
+      Frame         :: binary(),
+      ChannelNbr    :: channel(),
+      Timestamp     :: non_neg_integer(),
+      PreambleCodes :: [preamble_code()].
+pan_descr(Frame, ChannelNbr, Timestamp, PreambleCodes) ->
+    {FC, MH, Metadatas, _BeaconPayload} = mac_frame:decode_beacon(Frame),
+    {SuperframeSpecs, GTSFields, _} = Metadatas,
+    #pan_descr{coord_addr_mode = FC#frame_control.src_addr_mode,
+               coord_pan_id = MH#mac_header.src_pan,
+               coord_addr = MH#mac_header.src_addr,
+               channel_nbr = ChannelNbr,
+               superframe_specs = SuperframeSpecs,
+               gts_permit = GTSFields#gts_fields.gts_permit,
+               link_quality = 0, % TODO
+               timestamp = Timestamp,
+               security_status = success, % No security for the moment
+               security = #security{},
+               code_list = PreambleCodes}.
+
+%--- Internal: PIB values
 -spec write_default_conf(PhyMod :: module()) -> ok.
 write_default_conf(PhyMod) ->
     PhyMod:write(rx_fwto, #{rxfwto => ?MACACKWAITDURATION}),
