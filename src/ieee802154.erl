@@ -31,8 +31,6 @@
 
 
 % Includes
--include_lib("eunit/include/eunit.hrl").
-
 -include("ieee802154.hrl").
 -include("ieee802154_pib.hrl").
 -include("mac_frame.hrl").
