@@ -415,7 +415,7 @@ get_addrs(NbrShort, NbrExt, Left, {ShortAddrs, ExtAddrs}) ->
     NewShortAddrs = [reverse_byte_order(ShortAddr) | ShortAddrs],
     get_addrs(NbrShort-1, NbrExt, Rest, {NewShortAddrs, ExtAddrs}).
 
--spec encode_superframe_specs(superframe_specs()) -> binary().
+-spec encode_superframe_specs(superframe_specs()) -> <<_:16>>.
 encode_superframe_specs(SFSpecs) ->
     AssoPerm = to_bin(SFSpecs#superframe_specs.association_perm),
     PanCoord = to_bin(SFSpecs#superframe_specs.pan_coord),

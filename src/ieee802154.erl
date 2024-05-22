@@ -36,6 +36,11 @@
 -include("ieee802154_pib.hrl").
 -include("mac_frame.hrl").
 
+%--- Dialyzer ------------------------------------------------------------------
+-dialyzer({nowarn_function, send_beacon_request/1}).
+-dialyzer({nowarn_function, receive_beacon/3}).
+-dialyzer({nowarn_function, pan_descr/4}).
+
 %--- Types ---------------------------------------------------------------------
 
 -type state() :: #{phy_layer := module(),
@@ -336,10 +341,10 @@ setup_scan(State, ed) ->
     general_scan_setup(State),
     State;
 setup_scan(State, Type) when Type == active orelse Type == passive ->
-    #{phy_layer := PhyMod, attributes := Attributes} = State,
+    #{pib := Pib} = State,
     general_scan_setup(State),
-    NewAttributes = set(PhyMod, Attributes, mac_pan_id, <<16#FFFF:16>>),
-    State#{attributes => NewAttributes};
+    NewPib = ieee802154_pib:set(Pib, mac_pan_id, <<16#FFFF:16>>),
+    State#{pib => NewPib};
 setup_scan(_, _) ->
     error(not_implemented).
 
@@ -353,18 +358,20 @@ general_scan_setup(State) ->
                             autoack => 0,
                             rxwtoe => 1}).
 
--spec teardown_scan(State, Type, OldAttributes) -> ok when
+-spec teardown_scan(State, Type, OldAttributes) -> NewState when
       State         :: state(),
       Type          :: scan_type(),
-      OldAttributes :: pib_attributes().
+      OldAttributes :: pib_state(),
+      NewState      :: state().
 teardown_scan(State, ed, _OldAttributes) ->
     general_scan_teardown(State);
-teardown_scan(State, Type, OldAttributes) when Type == active
+teardown_scan(State, Type, OldPib) when Type == active
                                                 orelse Type == passive ->
-    #{phy_layer := PhyMod, attributes := Attributes} = State,
+    #{pib := Pib} = State,
     general_scan_teardown(State),
-    {ok, PanId} = get(PhyMod, OldAttributes, mac_pan_id),
-    set(PhyMod, Attributes, mac_pan_id, PanId);
+    PanId = ieee802154_pib:get(OldPib, mac_pan_id),
+    NewPib = ieee802154_pib:set(Pib, mac_pan_id, PanId),
+    State#{pib := NewPib};
 teardown_scan(_, _, _) ->
     error(not_implemented).
 
@@ -393,7 +400,7 @@ do_scan(PhyMod, ed, Duration, Channel) ->
       fun(PCode, Acc) ->
               PhyMod:set_channel(Channel, PCode),
               Now = erlang:timestamp(),
-              Noise = do_ed(PhyMod, Channel, Duration, Now, -0.0, -0.0),
+              Noise = do_ed(PhyMod, Channel, Duration, Now, -0, -0.0),
               max(Acc, Noise)
       end, -0.0, PreambleCodes);
 do_scan(_, _, _, _) ->
@@ -428,10 +435,9 @@ do_ed(PhyMod, Channel, D, TStart, _Elapsed, Acc) ->
       Result :: {ok, NewState} | {error, NewState},
       NewState :: state().
 send_beacon_request(State) ->
-    #{duty_cycle := DCState, attributes := Attributes} = State,
-    Csma = get_csma_params(Attributes),
+    #{duty_cycle := DCState, pib := Pib} = State,
     BeacReq = mac_frame:encode_beacon_request(),
-    case gen_duty_cycle:tx_request(DCState, BeacReq, Csma, ?NON_RANGING) of
+    case gen_duty_cycle:tx_request(DCState, BeacReq, Pib, ?NON_RANGING) of
         {ok, NewDCState, _} ->
             {ok, State#{duty_cycle => NewDCState}};
         {error, NewDCState, channel_access_failure} ->
