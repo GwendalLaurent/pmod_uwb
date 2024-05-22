@@ -26,6 +26,7 @@
 % Includes
 -include("grisp.hrl").
 
+-include("ieee802154.hrl").
 -include("pmod_uwb.hrl").
 
 %--- Macros --------------------------------------------------------------------
@@ -471,7 +472,7 @@ first_path_power_level() ->
     10 * math:log10((math:pow(F1, 2) + math:pow(F2, 2) + math:pow(F3, 2))/math:pow(N, 2)) - A.
 
 -spec change_channel(Channel) -> Preamblecode when
-      Channel      :: ieee802154:channel(),
+      Channel      :: channel(),
       Preamblecode :: 1 | 3 | 5 | 7. % temporary
 change_channel(Channel) ->
     write(rf_conf, #{rf_txctrl => ?RF_TXCTRL(Channel),
