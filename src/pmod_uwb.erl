@@ -16,6 +16,7 @@
 -export([rx_ranging_info/0]).
 -export([std_noise/0]).
 -export([first_path_power_level/0]).
+-export([change_channel/1]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -34,8 +35,8 @@
 
 -define(WRITE_ONLY_REG_FILE(RegFileID), RegFileID == tx_buffer).
 
--define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id; 
-                                       RegFileID==sys_time; 
+-define(READ_ONLY_REG_FILE(RegFileID), RegFileID==dev_id;
+                                       RegFileID==sys_time;
                                        RegFileID==rx_finfo;
                                        RegFileID==rx_buffer;
                                        RegFileID==rx_fqual;
@@ -46,10 +47,10 @@
                                        RegFileID==acc_mem).
 
 %% The congifurations of the subregisters of these register files are different
-%% (some sub-registers are RO, some are RW and some have reserved bytes 
+%% (some sub-registers are RO, some are RW and some have reserved bytes
 %% that can't be written)
-%% Thus, some registers files require to write their sub-register independently 
-%% => Write the sub-registers one by one instead of writting 
+%% Thus, some registers files require to write their sub-register independently
+%% => Write the sub-registers one by one instead of writting
 %%    the whole register file directly
 -define(IS_SRW(RegFileID), RegFileID==agc_ctrl;
                            RegFileID==ext_sync;
@@ -90,7 +91,60 @@
                                         SubRegister==evc_hpw;
                                         SubRegister==evc_tpw).
 
+% Sec. 10.5, table 61. Preamble code for PRF 16MHz
+-define(PCode, #{1 => {1, 2},
+                 2 => {3, 4},
+                 3 => {5, 6},
+                 4 => {7, 8},
+                 5 => {3, 4},
+                 7 => {7, 8}}).
 
+-define(PCode(Channel), maps:get(Channel, ?PCode)).
+
+-define(RF_TXCTRL, #{1 => 16#00005C40,
+                     2 => 16#00045CA0,
+                     3 => 16#00086CC0,
+                     4 => 16#00045C80,
+                     5 => 16#001E3FE3,
+                     7 => 16#001E7DE0}).
+
+-define(RF_TXCTRL(Channel), maps:get(Channel, ?RF_TXCTRL)).
+
+-define(RF_RXCTRLH, #{1 => 16#D8,
+                      2 => 16#D8,
+                      3 => 16#D8,
+                      4 => 16#BC,
+                      5 => 16#D8,
+                      7 => 16#BC}).
+
+-define(RF_RXCTRLH(Channel), maps:get(Channel, ?RF_RXCTRLH)).
+
+-define(TC_PGDELAY, #{1 => 16#C9,
+                      2 => 16#C2,
+                      3 => 16#C5,
+                      4 => 16#95,
+                      5 => 16#B5,
+                      7 => 16#93}).
+
+-define(TC_PGDELAY(Channel), maps:get(Channel, ?TC_PGDELAY)).
+
+-define(FS_PLLCFG, #{1 => 16#09000407,
+                     2 => 16#08400508,
+                     3 => 16#08401009,
+                     4 => 16#08400508,
+                     5 => 16#0800041D,
+                     7 => 16#0800041D}).
+
+-define(FS_PLLCFG(Channel), maps:get(Channel, ?FS_PLLCFG)).
+
+-define(FS_PLLTUNE, #{1 => 16#1E,
+                       2 => 16#26,
+                       3 => 16#56,
+                       4 => 16#26,
+                       5 => 16#BE,
+                       7 => 16#BE}).
+
+-define(FS_PLLTUNE(Channel), maps:get(Channel, ?FS_PLLTUNE)).
 %--- Types ---------------------------------------------------------------------
 -export_type([register_values/0]).
 
@@ -107,7 +161,7 @@ start_link(Connector, _Opts) ->
 %%
 %% === Example ===
 %% To read the register file DEV_ID
-%% ``` 
+%% ```
 %% 1> pmod_uwb:read(dev_id).
 %% #{model => 1,rev => 0,ridtag => "DECA",ver => 3}
 %% '''
@@ -119,16 +173,16 @@ read(RegFileID) when ?WRITE_ONLY_REG_FILE(RegFileID) ->
 read(RegFileID) -> call({read, RegFileID}).
 
 %% @doc Write values in a register
-%% 
+%%
 %% === Examples ===
 %% To write in a simple register file (i.e. a register without any sub-register)
 %% ```
 %% 1> pmod_uwb:write(eui, #{eui => <<16#AAAAAABBBBBBBBBB>>}).
 %% ok
-%% ''' 
+%% '''
 %% To write in one sub-register of a register file:
 %% ```
-%% 2> pmod_uwb:write(panadr, #{pan_id => <<16#AAAA>>}). 
+%% 2> pmod_uwb:write(panadr, #{pan_id => <<16#AAAA>>}).
 %% ok
 %% '''
 %% The previous code will only change the values inside the sub-register PAN_ID
@@ -139,7 +193,7 @@ read(RegFileID) -> call({read, RegFileID}).
 %%                             short_addr => <<16#BBBB>>}).
 %% ok
 %% '''
-%% Some sub-registers have their own fields. For example to set the value of 
+%% Some sub-registers have their own fields. For example to set the value of
 %% the DIS_AM field in the sub-register AGC_CTRL1 of the register file AGC_CTRL:
 %% ```
 %% 4> pmod_uwb:write(agc_ctrl, #{agc_ctrl1 => #{dis_am => 2#0}}).
@@ -163,7 +217,7 @@ write(RegFileID, Value) when is_map(Value) ->
 %% ```
 %% 1> pmod_uwb:write_tx_data(<<"Hello">>).
 %% '''
--spec write_tx_data(Value) -> Result when 
+-spec write_tx_data(Value) -> Result when
     Value  :: binary(),
     Result :: ok | {error, any()}.
 write_tx_data(Value) -> call({write_tx, Value}).
@@ -192,12 +246,12 @@ transmit(Data) when is_bitstring(Data) ->
 %% @doc Performs a transmission with the specified options
 %%
 %% === Options ===
-%% * wait4resp: It specifies that the reception must be enabled after 
+%% * wait4resp: It specifies that the reception must be enabled after
 %%              the transmission in the expectation of a response
 %% * w4r-tim: Specifies the turn around time in microseconds. That is the time
-%%            the pmod will wait before enabling rx after a tx. 
+%%            the pmod will wait before enabling rx after a tx.
 %%            Note that it won't be set if wit4resp is disabled
-%% * txdlys: Specifies if the transmitter delayed sending should be set 
+%% * txdlys: Specifies if the transmitter delayed sending should be set
 %% * tx_delay: Specifies the delay of the transmission (see register DX_TIME)
 %%
 %% === Examples ===
@@ -230,20 +284,20 @@ wait_for_transmission() ->
         _ -> wait_for_transmission()
     end.
 
-%% @doc Receive data using the pmod 
+%% @doc Receive data using the pmod
 %% @equiv reception(false)
--spec reception() -> Result when 
+-spec reception() -> Result when
     Result :: {integer(), bitstring()} | {error, any()}.
-reception() -> 
+reception() ->
     reception(false).
 
-%% @doc Receive data using the pmod 
+%% @doc Receive data using the pmod
 %%
 %% The function will hang until a frame is received on the board
 %%
 %% The CRC of the received frame <b>isn't</b> included in the returned value
 %%
-%% @param RXEnabled: specifies if the reception is already enabled on the board 
+%% @param RXEnabled: specifies if the reception is already enabled on the board
 %%                   (or set with delay)
 %%
 %% === Example ===
@@ -278,12 +332,12 @@ disable_rx() ->
 
 wait_for_reception() ->
     % io:format("Wait for resp~n"),
-    case read(sys_status) of 
+    case read(sys_status) of
         #{rxrfto := 1} -> rxrfto;
         #{rxphe := 1} -> rxphe;
         #{rxfce := 1} -> rxfce;
         #{rxrfsl := 1} -> rxrfsl;
-        #{rxpto := 1} -> rxpto; 
+        #{rxpto := 1} -> rxpto;
         #{rxsfdto := 1} -> rxsfdto;
         #{ldeerr := 1} -> ldeerr;
         #{affrej := 1} -> affrej;
@@ -299,7 +353,7 @@ wait_for_reception() ->
 -spec set_frame_timeout(Timeout) -> Result when
       Timeout :: microseconds(),
       Result  :: ok.
-set_frame_timeout(Timeout) -> 
+set_frame_timeout(Timeout) ->
     write(rx_fwto, #{rxfwto => Timeout}),
     write(sys_cfg, #{rxwtoe => 2#1}). % enable receive wait timeout
 
@@ -319,15 +373,15 @@ set_preamble_timeout(Timeout) ->
 disable_preamble_timeout() ->
     write(drx_conf, #{drx_pretoc => 0}).
 
-%% @doc Performs a reset of the IC following the procedure (cf. sec. 7.2.50.1) 
+%% @doc Performs a reset of the IC following the procedure (cf. sec. 7.2.50.1)
 softreset() -> 
     write(pmsc, #{pmsc_ctrl0 => #{sysclks => 2#01}}),
     write(pmsc, #{pmsc_ctrl0 => #{softrest => 16#0}}),
     write(pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
 
 
-clear_rx_flags() -> 
-    write(sys_status, #{rxsfdto => 2#1, 
+clear_rx_flags() ->
+    write(sys_status, #{rxsfdto => 2#1,
                         rxpto => 2#1,
                         rxrfto => 2#1,
                         rxrfsl => 2#1,
@@ -414,8 +468,24 @@ first_path_power_level() ->
     #{fp_ampl2 := F2, pp_ampl3 := F3} = read(rx_fqual),
     A = 113.77,
     N = preamble_acc(),
-    10 * math:log10((math:pow(F1,2) + math:pow(F2, 2) + math:pow(F3, 2))/math:pow(N, 2)) - A. 
-    
+    10 * math:log10((math:pow(F1, 2) + math:pow(F2, 2) + math:pow(F3, 2))/math:pow(N, 2)) - A.
+
+-spec change_channel(Channel) -> Preamblecode when
+      Channel      :: ieee802154:channel(),
+      Preamblecode :: 1 | 3 | 5 | 7. % temporary
+change_channel(Channel) ->
+    write(rf_conf, #{rf_txctrl => ?RF_TXCTRL(Channel),
+                     rf_rxctrlh => ?RF_RXCTRLH(Channel)}),
+    write(tx_cal, #{tc_pgdelay => ?TC_PGDELAY(Channel)}),
+    write(fs_ctrl, #{fs_pllcfg => ?FS_PLLCFG(Channel),
+                     fs_plltune => ?FS_PLLTUNE(Channel)}),
+    {PCode, _} = ?PCode(Channel),
+    write(chan_ctrl, #{tx_chan => Channel,
+                       rx_chan => Channel,
+                       tx_pcode => PCode,
+                       rx_pcode => PCode}),
+    PCode.
+
 %--- gen_server Callbacks ------------------------------------------------------
 
 %% @private
@@ -487,6 +557,7 @@ write_default_values(Bus) ->
     write_reg(Bus, lde_if, #{lde_cfg1 => #{ntm => 16#D}, lde_cfg2 => 16#1607}),
     write_reg(Bus, agc_ctrl, #{agc_tune1 => 16#8870, agc_tune2 => 16#2502A907}),
     write_reg(Bus, drx_conf, #{drx_tune2 => 16#311A002D}),
+    % write_reg(Bus, drx_conf, #{drx_tune2 => 16#351A009A}), % PAC size 32 for 16MHz PRF
     write_reg(Bus, tx_power, #{tx_power => 16#0E082848}),
     write_reg(Bus, rf_conf, #{rf_txctrl => 16#001E3FE3}),
     write_reg(Bus, tx_cal, #{tc_pgdelay => 16#B5}),
