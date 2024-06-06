@@ -25,8 +25,8 @@
 %--- Macros --------------------------------------------------------------------
 
 -define(SENDER_ADDR, <<16#CAFEDECA00000001:64>>).
--define(RCVR_ADDR, <<16#CAFEDECA00000002:64>>).
--define(MDL_ADDR, <<16#CAFEDECA00000003:64>>).
+-define(MDL_ADDR, <<16#CAFEDECA00000002:64>>).
+-define(RCVR_ADDR, <<16#CAFEDECA00000003:64>>).
 
 %--- Common test callbacks -----------------------------------------------------
 

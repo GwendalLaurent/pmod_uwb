@@ -60,11 +60,10 @@ reception() ->
     end.
 
 rx_(Timeout, TimeoutError) -> 
-    Ref = make_ref(),
-    gen_server:cast(?MODULE, {reception, Ref, self()}),
-    receive 
-        {Ref, Ret} -> Ret
-    after Timeout -> TimeoutError 
+    try
+        gen_server:call(?MODULE, {reception}, Timeout)
+    catch
+        exit:{timeout, _} -> TimeoutError
     end.
 
 reception(_RxOpts) ->
@@ -166,26 +165,33 @@ handle_call({transmit, Frame, Options}, _From, #{network := NetworkNode} = State
     PhyFrame = {Options#tx_opts.ranging, Frame},
     {reply, tx(NetworkNode, PhyFrame), State#{regs => NewRegs}};
 handle_call({disable_rx}, _From, State) -> {reply, ok, maps:remove(waiting, State)};
+handle_call({reception}, From, State) -> {noreply, State#{waiting => From}};
 handle_call(_Call, _From, State) -> io:format("Call not recognized in mock pmod_uwb: ~p", [_Call]), {reply, ok, State}.
 
-handle_cast({reception, Ref, From}, State) -> {noreply, State#{waiting => {From, Ref}}}.
+handle_cast(Request, _) ->
+    error({unknown_cast, Request}).
 
-handle_info({frame, Frame}, #{network := NetworkNode, waiting := {From, Ref}, regs := #{eui := #{eui := ExtAddress}, panadr := #{short_addr := ShortAddress}, sys_cfg := #{ffen := 1}}} = State) ->
+
+handle_info({frame, Frame}, #{network := NetworkNode, waiting := From, regs := #{eui := #{eui := ExtAddress}, panadr := #{short_addr := ShortAddress}, sys_cfg := #{ffen := 1}}} = State) ->
     #{regs := Regs} = State,
-    {_, RawFrame} = Frame,
-    NewState = case check_address(RawFrame, ShortAddress, ExtAddress) of
-                   ok -> ack_reply(NetworkNode, RawFrame),
-                         NewRegs = received(From, Ref, Regs, Frame),
-                         State#{regs := NewRegs};
-                   _  -> 
-                       From ! {Ref, affrej},
-                       State
-               end,
-    {noreply, maps:remove(waiting, NewState)};
-handle_info({frame, Frame}, #{waiting := {From, Ref}, regs := #{sys_cfg := #{ffen := 0}}} = State) ->
+    {Ranging, RawFrame} = Frame,
+    case check_address(RawFrame, ShortAddress, ExtAddress) of
+        ok -> ack_reply(NetworkNode, RawFrame),
+              NewRegs = pmod_uwb_registers:update_reg(Regs, rx_finfo, #{rng => Ranging}),
+              NewState = maps:remove(waiting, State),
+              gen_server:reply(From, {byte_size(RawFrame), RawFrame}),
+              {noreply, NewState#{regs := NewRegs}};
+        _  -> 
+            gen_server:reply(From, affrej),
+            {noreply, maps:remove(waiting, State)}
+    end;
+handle_info({frame, Frame}, #{waiting := From, regs := #{sys_cfg := #{ffen := 0}}} = State) ->
     #{regs := Regs} = State,
-    NewRegs = received(From, Ref, Regs, Frame),
-    {noreply, maps:remove(waiting, State#{regs := NewRegs})};
+    {Ranging, RawFrame} = Frame,
+    NewRegs = pmod_uwb_registers:update_reg(Regs, rx_finfo, #{rng => Ranging}),
+    NewState = maps:remove(waiting, State),
+    gen_server:reply(From, {byte_size(RawFrame), RawFrame}),
+    {noreply, NewState#{regs := NewRegs}};
 handle_info({frame, _}, State) ->
     {noreply, State}.
 
@@ -207,7 +213,7 @@ check_address(Frame, ShortAddress, ExtAddress) -> % This will need to check the 
     end.
 
 ack_reply(NetworkNode, Frame) ->
-    <<_:2, ACKREQ:1, _/bitstring>> = Frame,
+    <<_:2, _ACKREQ:1, _/bitstring>> = Frame,
     % io:format("Ack req: ~w ~n ~w", [ACKREQ, Frame]),
     case Frame of
         <<_:2, ?ENABLED:1, _:13, Seqnum:8, _/bitstring>> ->
@@ -218,9 +224,3 @@ ack_reply(NetworkNode, Frame) ->
             % io:format("No Ack requested~n"),
             ok
     end.
-
-received(From, Ref, Regs, Frame) ->
-    {Ranging, RawFrame} = Frame,
-    UpdatedRegs = pmod_uwb_registers:update_reg(Regs, rx_finfo, #{rng => Ranging}),
-    From ! {Ref, {byte_size(RawFrame), RawFrame}},
-    UpdatedRegs.
