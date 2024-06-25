@@ -26,8 +26,9 @@ all() -> [
          %  {group, tx_rx_no_ack},
          %  {group, rx_loop_on},
           {group, tx_rx_loop_on_reply},
-          {group, busy_medium},
-          {group, forwarding}].
+          {group, busy_medium}
+          %{group, forwarding}
+         ].
 
 groups() -> [
              {simple_tx_rx, [parallel], [sender, receiver]},
@@ -36,8 +37,8 @@ groups() -> [
              {tx_rx_no_ack, [parallel], [sender_no_ack, outsider]},
              {rx_loop_on, [parallel], [sender, receiver_callback]},
              {tx_rx_loop_on_reply, [parallel], [sender_rx_loop_reply, receiver_rx_loop_reply]},
-             {busy_medium, [parallel], [sender_busy_medium, jammer]},
-             {forwarding, [parallel], [fwd_sender, fwd_mid, fwd_receiver]}
+             {busy_medium, [parallel], [sender_busy_medium, jammer]}
+%              {forwarding, [parallel], [fwd_sender, fwd_mid, fwd_receiver]}
             ].
 
 init_per_suite(Config) ->

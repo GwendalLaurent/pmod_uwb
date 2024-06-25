@@ -221,14 +221,6 @@ handle_call({tx, Frame, Ranging}, _From, State) ->
         {error, NewDCState, Error} ->
             {reply, {error, Error}, State#{duty_cycle => NewDCState}}
         end;
-handle_call({rx}, _From, #{duty_cycle := DutyCycleState} = State) ->
-    case gen_duty_cycle:rx_request(DutyCycleState) of
-        {ok, NewDutyCycleState, Frame} ->
-            DecFrame = mac_frame:decode(Frame),
-            {reply, {ok, DecFrame}, State#{duty_cycle => NewDutyCycleState}};
-        {error, NewDutyCycleState, Error} ->
-            {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState}}
-    end;
 handle_call({get, Attribute}, _From, State) ->
     #{pib := Pib} = State,
     case ieee802154_pib:get(Pib, Attribute) of

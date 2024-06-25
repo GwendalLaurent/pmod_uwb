@@ -41,17 +41,17 @@ stop() ->
     gen_event:delete_handler(?GEN_EVENT, ?MODULE, []).
 
 % @doc triggers a rx event
--spec rx_event(Frame, Metadata) -> ok when
-      Frame :: {integer(), binary()},
-      Metadata :: #{snr := float(),
-                    prf := uwb_PRF(),
-                    pre := uwb_preamble_symbol_repetition(),
-                    data_rate := data_rate(),
-                    rng := flag(),
-                    rx_stamp := integer(),
-                    tx_stamp := integer(),
-                    rxtofs := integer(),
-                    rxttcki := integer()}.
+% -spec rx_event(Frame, Metadata) -> ok when
+%       Frame :: {integer(), bitstring()},
+%       Metadata :: #{snr := float(),
+%                     prf := uwb_PRF(),
+%                     pre := uwb_preamble_symbol_repetition(),
+%                     data_rate := data_rate(),
+%                     rng := flag(),
+%                     rx_stamp := integer(),
+%                     tx_stamp := integer(),
+%                     rxtofs := integer(),
+%                     rxttcki := integer()}.
 rx_event({_, Frame}, Metadata) ->
     gen_event:notify(?GEN_EVENT, {rx, Frame, Metadata}).
 
@@ -62,12 +62,6 @@ init(State) ->
     #{input_callback := InputCallback} = State,
     {ok, #state{input_callback = InputCallback}}.
 
--spec handle_event(Event :: term(), State :: term()) ->
-    {ok, NewState :: term()} |
-    {ok, NewState :: term(), hibernate} |
-    {swap_handler, Args1 :: term(), NewState :: term(),
-     Handler2 :: (atom() | {atom(), Id :: term()}), Args2 :: term()} |
-    remove_handler.
 handle_event({rx, Frame, Metadata}, State) ->
     #state{input_callback = InputCallback} = State,
     DecodedFrame = mac_frame:decode(Frame),
@@ -83,22 +77,10 @@ handle_event({rx, Frame, Metadata}, State) ->
 handle_event(_Event, State) ->
     {ok, State}.
 
--spec handle_call(Request :: term(), State :: term()) ->
-    {ok, Reply :: term(), NewState :: term()} |
-    {ok, Reply :: term(), NewState :: term(), hibernate} |
-    {swap_handler, Reply :: term(), Args1 :: term(), NewState :: term(),
-     Handler2 :: (atom() | {atom(), Id :: term()}), Args2 :: term()} |
-    {remove_handler, Reply :: term()}.
 handle_call(_, State) ->
     % TODO user should be able to register a callback
     {ok, ok, State}.
 
--spec handle_info(Info :: term(), State :: term()) ->
-    {ok, NewState :: term()} |
-    {ok, NewState :: term(), hibernate} |
-    {swap_handler, Args1 :: term(), NewState :: term(),
-     Handler2 :: (atom() | {atom(), Id :: term()}), Args2 :: term()} |
-    remove_handler.
 handle_info(_, State) ->
     % TODO: nothing here
     {ok, State}.

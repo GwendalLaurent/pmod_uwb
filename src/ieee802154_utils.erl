@@ -36,11 +36,11 @@ t_psym(PRF) ->
 % t_dsym according to values of table 99 Std. IEEE.802.15.4
 % Over all the possible values supported for the PRF and the channels
 % only the bit rate determines T_dsym
-t_dsym(#phy_cfg{data_rate = 0.11}) ->
+t_dsym(#phy_cfg{data_rate = ?DATA_RATE_11KHZ}) ->
     8205.13;
-t_dsym(#phy_cfg{data_rate = 0.85}) ->
+t_dsym(#phy_cfg{data_rate = ?DATA_RATE_84KHZ}) ->
     1025.64;
-t_dsym(#phy_cfg{data_rate = 6.81}) ->
+t_dsym(#phy_cfg{data_rate = ?DATA_RATE_6MHZ}) ->
     128.21;
 t_dsym(BitRate) ->
     error({non_supported_bit_rate, BitRate}).

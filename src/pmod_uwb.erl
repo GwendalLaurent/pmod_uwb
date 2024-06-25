@@ -259,7 +259,7 @@ wait_for_transmission() ->
 %% @equiv reception(false)
 -spec reception() -> Result when 
     Result :: {integer(), bitstring()} | {error, any()}.
-reception() -> 
+reception() ->
     reception(false).
 
 %% @doc Receive data using the pmod 

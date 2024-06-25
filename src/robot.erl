@@ -66,7 +66,8 @@ rx_callback({RxFC, RxMacHeader, Payload}, _LQI, _Security, _Ranging) ->
     NewSrc = ieee802154:get_pib_attribute(mac_short_address),
     NewFC = RxFC#frame_control{ack_req = ?DISABLED},
     NewMH = RxMacHeader#mac_header{src_addr = NewSrc, dest_addr = <<16#0003:16>>, seqnum = NewSeqnum},
-    ieee802154:transmission({NewFC, NewMH, Payload}).
+    ieee802154:transmission({NewFC, NewMH, Payload}),
+    ok.
 
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().

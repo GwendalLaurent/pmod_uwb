@@ -120,7 +120,7 @@ terminate(State, Reason) ->
 %% it will call the callback function to notify the next higher level/layer
 %% If the event is an error, the function ignores it
 %% @end
--spec rx_loop(PhyMod) -> ok when
+-spec rx_loop(PhyMod) -> no_return() when
       PhyMod :: module().
 rx_loop(PhyMod) ->
     PhyMod:reception_async(),

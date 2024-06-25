@@ -1,6 +1,10 @@
 -define(ENABLED, 2#1).
 -define(DISABLED, 2#0).
 
+-define(DATA_RATE_11KHZ, 2#00).
+-define(DATA_RATE_84KHZ, 2#01).
+-define(DATA_RATE_6MHZ, 2#10).
+
 % w4r_tim is the delay between the tx is done and the moment the rx will be enabled (it is not a timeout)
 -record(tx_opts, {wait4resp = ?DISABLED:: flag(),
                   w4r_tim = 0 :: miliseconds(),
@@ -10,12 +14,12 @@
 
 -type tx_opts() :: #tx_opts{}.
 
--record(phy_cfg, {psr = 1024      :: uwb_preamble_symbol_repetition(),
-                  prf = 16        :: uwb_PRF(),
-                  sfd = 8         :: uwb_sfd(),
-                  data_rate = 6.81 :: data_rate(),
-                  channel = 5     :: uwb_channel(),
-                  pac_size = 8    :: uwb_pac_size()}).
+-record(phy_cfg, {psr = 1024                  :: uwb_preamble_symbol_repetition(),
+                  prf = 16                    :: uwb_PRF(),
+                  sfd = 8                     :: uwb_sfd(),
+                  data_rate = ?DATA_RATE_6MHZ :: data_rate(),
+                  channel = 5                 :: uwb_channel(),
+                  pac_size = 8                :: uwb_pac_size()}).
 
 -type phy_cfg() :: #phy_cfg{}.
 

@@ -56,8 +56,10 @@ default_attributes() ->
     #{
       cw0 => 2, % cf. p.22 standard
       mac_extended_address => <<16#FFFFFFFF00000000:64>>,
+      % mac_max_BE => 8,
       mac_max_BE => 5,
       mac_max_csma_backoffs => 4,
+      % mac_min_BE => 5,
       mac_min_BE => 3,
       mac_pan_id => <<16#FFFF:16>>,
       mac_short_address => <<16#FFFF:16>>
