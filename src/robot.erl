@@ -44,7 +44,6 @@
 % Sends/receive only 1 frame
 tx() ->
     % FrameControl = #frame_control{ack_req = ?ENABLED},
-    pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     FrameControl = #frame_control{},
     MacHeader = #mac_header{},
     ieee802154:transmission({FrameControl, MacHeader, <<"Test">>}).
@@ -62,27 +61,28 @@ tx_ranging() ->
       LinkQuality :: integer(),
       Security    :: ieee802154:security(),
       Ranging     :: ieee802154:ranging_informations().
-rx_callback({_FrameControl, _MacHeader, _Payload}, LQI, Security, Ranging) ->
-    io:format("------ Frame report ------~n"),
-    io:format("Link quality: ~p ~n", [LQI]),
-    io:format("Security: ~w~n", [Security]),
-    io:format("Ranging: ~w~n", [Ranging]),
-    io:format("-------------------------~n").
-    % io:format("Received frame with seqnum: ~w - Payload: ~w ~n",
-    %           [_MacHeader#mac_header.seqnum, _Payload]).
+rx_callback({RxFC, RxMacHeader, Payload}, _LQI, _Security, _Ranging) ->
+    NewSeqnum = (RxMacHeader#mac_header.seqnum + 20) rem 255,
+    NewSrc = ieee802154:get_pib_attribute(mac_short_address),
+    NewFC = RxFC#frame_control{ack_req = ?DISABLED},
+    NewMH = RxMacHeader#mac_header{src_addr = NewSrc, dest_addr = <<16#0003:16>>, seqnum = NewSeqnum},
+    ieee802154:transmission({NewFC, NewMH, Payload}),
+    ok.
 
 rx_on() -> ieee802154:rx_on().
 rx_off() -> ieee802154:rx_off().
 
 tx(0, Total, Success, Error) -> {Success, Error, Total};
 tx(N, Total, Success, Error) ->
+    PanId = ieee802154:get_pib_attribute(mac_pan_id),
+    Addr = ieee802154:get_pib_attribute(mac_short_address),
     Seqnum = Total rem 512,
     case ieee802154:transmission({#frame_control{pan_id_compr = ?ENABLED,
                                                  ack_req = ?ENABLED},
                                   #mac_header{seqnum = Seqnum,
-                                              dest_pan = ?PANID,
+                                              dest_pan = PanId,
                                               dest_addr = ?RECEIVER_ADDR,
-                                              src_addr = ?SENDER_ADDR},
+                                              src_addr = Addr},
                                   ?BENCHMARK_DATA}) of
         {ok, _} -> tx(N-1, Total+1, Success+1, Error);
         _ -> tx(N-1, Total+1, Success, Error+1)
@@ -105,9 +105,6 @@ jammer(N) ->
     jammer(N-1).
 
 tx_benchmark() ->
-    ieee802154:set_pib_attribute(mac_pan_id, ?PANID),
-    ieee802154:set_pib_attribute(mac_short_address, ?SENDER_ADDR),
-    pmod_uwb:set_preamble_timeout(?CCA_DURATION),
     NbrFrames = 100,
     % NbrFrames = 1000,
     Start = os:timestamp(),
@@ -120,8 +117,6 @@ tx_benchmark() ->
     io:format("----------------------------------------------~n").
 
 rx_benchmark() ->
-    ieee802154:set_pib_attribute(mac_pan_id, ?PANID),
-    ieee802154:set_pib_attribute(mac_short_address, ?RECEIVER_ADDR),
     % rx().
     ieee802154:rx_on().
 
@@ -137,20 +132,20 @@ start(_Type, _Args) ->
 
     ieee802154:start_link(
       #ieee_parameters{duty_cycle = duty_cycle_non_beacon,
-                       input_callback = fun double_sided_3_msg:rx_callback/4}
+                       input_callback = fun rx_callback/4}
      ),
 
     case application:get_env(robot, pan_id) of
         {ok, PanId} -> ieee802154:set_pib_attribute(mac_pan_id, PanId);
-        _ -> ok
+        _ -> ieee802154:set_pib_attribute(mac_pan_id, <<16#DECA:16>>)
     end,
     case application:get_env(robot, mac_addr) of
         {ok, MacAddr} -> ieee802154:set_pib_attribute(mac_short_address, MacAddr);
         _ -> ok
     end,
 
-    double_sided_3_msg:start_link(),
-    ieee802154:rx_on(?ENABLED),
+    % double_sided_3_msg:start_link(),
+    ieee802154:rx_on(),
     {ok, Supervisor}.
 
 % @private

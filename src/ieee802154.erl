@@ -14,7 +14,6 @@
 -export([reception/0]).
 
 -export([rx_on/0]).
--export([rx_on/1]).
 -export([rx_off/0]).
 
 -export([get_pib_attribute/1]).
@@ -40,7 +39,6 @@
 -type state() :: #{phy_layer := module(),
                    duty_cycle := gen_duty_cycle:state(),
                    pib := pib_state(),
-                   input_callback := input_callback(),
                    _:=_}.
 
 %--- API -----------------------------------------------------------------------
@@ -130,32 +128,13 @@ transmission(Frame, Ranging) ->
 reception() ->
     gen_server:call(?MODULE, {rx}, infinity).
 
-%% @doc
-%% @equiv rx_on(0)
+%% @doc Turns on the continuous reception
+%% Ranging is by default switched on
 %% @end
 -spec rx_on() -> Result when
       Result :: ok | {error, atom()}.
 rx_on() ->
-    gen_server:call(?MODULE, {rx_on, ?DISABLED}).
-
-%% @doc Turns on the continuous reception
-%% When a frame is received, the callback function is called
-%% (see {@link start_link})
-%%
-%% The ranging parameter is used to specify if ranging is activated during rx
-%%
-%% ```
-%% Ranging not activated
-%% 1> ieee802154:rx_on(?DISABLED).
-%%
-%% Ranging activated
-%% 2> ieee802154:rx_on(?ACTIVATED).
-%% '''
-%% @end
--spec rx_on(Ranging) -> ok when
-      Ranging :: ?DISABLED | ?ENABLED.
-rx_on(Ranging) ->
-    gen_server:call(?MODULE, {rx_on, Ranging}).
+    gen_server:call(?MODULE, {rx_on}).
 
 %% @doc Turns off the continuous reception
 %% @end
@@ -191,8 +170,12 @@ reset(SetDefaultPIB) ->
       Params :: ieee_parameters(),
       State  :: state().
 init(Params) ->
+    {ok, _GenEvent} = gen_event:start_link({local, ?GEN_EVENT}),
     PhyMod = Params#ieee_parameters.phy_layer,
+    InputCallback = Params#ieee_parameters.input_callback,
     write_default_conf(PhyMod),
+
+    ok = ieee802154_events:start(#{input_callback => InputCallback}),
 
     DutyCycleState = gen_duty_cycle:start(Params#ieee_parameters.duty_cycle,
                                           PhyMod),
@@ -200,14 +183,15 @@ init(Params) ->
     Data = #{phy_layer => PhyMod,
              duty_cycle => DutyCycleState,
              pib => ieee802154_pib:init(PhyMod),
-             ranging => ?DISABLED,
-             input_callback => Params#ieee_parameters.input_callback},
+             ranging => ?DISABLED},
     {ok, Data}.
 
 -spec terminate(Reason, State) -> ok when
       Reason :: term(),
       State :: state().
 terminate(Reason, #{duty_cycle := GenDutyCycleState}) ->
+    ieee802154_events:stop(),
+    gen_event:stop(?GEN_EVENT),
     gen_duty_cycle:stop(GenDutyCycleState, Reason).
 
 code_change(_, _, _, _) ->
@@ -216,18 +200,13 @@ code_change(_, _, _, _) ->
 -spec handle_call(_, _, State) -> Result when
       State   :: state(),
       Result  :: {reply, term(), State}.
-handle_call({rx_on, RangingFlag}, _From, State) ->
-    #{duty_cycle := DCState,
-      input_callback := Callback} = State,
-    NewCallback = fun(Frame, LQI, _PRF, Sec, _PreambleRep, _DataRate, Rng) ->
-                    Callback(mac_frame:decode(Frame), LQI, Sec, Rng)
-                  end,
-    case gen_duty_cycle:turn_on(DCState, NewCallback, RangingFlag) of
+handle_call({rx_on}, _From, State) ->
+    #{duty_cycle := DCState} = State,
+    case gen_duty_cycle:turn_on(DCState) of
         {ok, NewDutyCycleState} ->
             {reply, ok, State#{duty_cycle => NewDutyCycleState}};
         {error, NewDutyCycleState, Error} ->
-            {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState,
-                                           ranging := RangingFlag}}
+            {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState}}
     end;
 handle_call({rx_off}, _From, #{duty_cycle := DCState} = State) ->
     NewDCState = gen_duty_cycle:turn_off(DCState),
@@ -242,14 +221,6 @@ handle_call({tx, Frame, Ranging}, _From, State) ->
         {error, NewDCState, Error} ->
             {reply, {error, Error}, State#{duty_cycle => NewDCState}}
         end;
-handle_call({rx}, _From, #{duty_cycle := DutyCycleState} = State) ->
-    case gen_duty_cycle:rx_request(DutyCycleState) of
-        {ok, NewDutyCycleState, Frame} ->
-            DecFrame = mac_frame:decode(Frame),
-            {reply, {ok, DecFrame}, State#{duty_cycle => NewDutyCycleState}};
-        {error, NewDutyCycleState, Error} ->
-            {reply, {error, Error}, State#{duty_cycle => NewDutyCycleState}}
-    end;
 handle_call({get, Attribute}, _From, State) ->
     #{pib := Pib} = State,
     case ieee802154_pib:get(Pib, Attribute) of

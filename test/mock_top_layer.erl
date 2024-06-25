@@ -40,24 +40,37 @@ stop() ->
 
 %%% gen_server callbacks %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init(_) ->
-    {ok, #{received => []}}.
+    {ok, #{received => #{}}}.
 
 handle_call({dump}, _From, #{received := Received} = State) ->
-    {reply, {ok, lists:reverse(Received)}, State#{received => []}};
+    Ret = lists:sort(fun({_, MH1, _}, {_, MH2, _}) ->
+                             MH1#mac_header.seqnum < MH2#mac_header.seqnum
+                     end, maps:values(Received)),
+    {reply, {ok, Ret}, State#{received => []}};
 handle_call(_, _, _) ->
   error(not_implemented).
 
-handle_cast({rx, Frame}, #{received := Received} = State) ->
-    {FC, MH, Payload} = Frame,
-    case MH#mac_header.dest_addr of
-        ?MDL_ADDR ->
-            NewMH = MH#mac_header{src_addr = ?MDL_ADDR, dest_addr = ?RCVR_ADDR},
-            NewFrame = {FC, NewMH, Payload},
-            ieee802154:transmission(NewFrame);
+handle_cast({rx, {FC, MH, Payload}=Frame}, #{received := Received} = State)
+  when FC#frame_control.frame_type == ?FTYPE_DATA ->
+    Seqnum = MH#mac_header.seqnum,
+    case Received of
+        #{Seqnum := _} ->
+            {noreply, State};
         _ ->
-            ok
-    end,
-    {noreply, State#{received => [Frame | Received]}};
+            case MH#mac_header.dest_addr of
+                ?MDL_ADDR ->
+                    NewMH = MH#mac_header{seqnum = Seqnum + 10,
+                                          src_addr = ?MDL_ADDR,
+                                          dest_addr = ?RCVR_ADDR},
+                    NewFrame = {FC, NewMH, Payload},
+                    ieee802154:transmission(NewFrame);
+                _ ->
+                    ok
+            end,
+            {noreply, State#{received => maps:put(Seqnum, Frame, Received)}}
+    end;
+handle_cast({rx, _}, State) ->
+    {noreply, State};
 handle_cast(_, _) ->
   error(not_implemented).
 

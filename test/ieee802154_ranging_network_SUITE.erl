@@ -19,11 +19,9 @@
 -export([non_ranging_initiator/1]).
 -export([ranging_responder_tx_no_ranging/1]).
 
--export([responder_no_ranging/1]).
 %--- Callbacks -----------------------------------------------------------------
 all() -> [{group, standard_ranging_exchange},
-          {group, tx_no_request},
-          {group, rx_no_request}].
+          {group, tx_no_request}].
 
 %% RNG = Ranging
 %% rcvr = Receiver
@@ -32,9 +30,7 @@ all() -> [{group, standard_ranging_exchange},
 groups() -> [{standard_ranging_exchange, [parallel], [standard_ranging_initiator,
                                                       standard_ranging_responder]},
              {tx_no_request, [parallel], [non_ranging_initiator,
-                                          ranging_responder_tx_no_ranging]},
-             {rx_no_request, [parallel], [standard_ranging_initiator,
-                                          responder_no_ranging]}].
+                                          ranging_responder_tx_no_ranging]}].
 
 %--- Group setup and teardown --------------------------------------------------
 init_per_group(_, Config) ->
@@ -112,7 +108,7 @@ standard_ranging_initiator(Config) ->
 standard_ranging_responder(Config) ->
     {_, Node} = ?config(node, Config),
     ExpectedFrame = ?config(tx_frame, Config),
-    ok = erpc:call(Node, ieee802154, rx_on, [?ENABLED]),
+    ok = erpc:call(Node, ieee802154, rx_on, []),
     timer:sleep(300),
     [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]),
     [{_, [ExpectedFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]).
@@ -126,14 +122,6 @@ non_ranging_initiator(Config) ->
 
 ranging_responder_tx_no_ranging(Config) ->
     standard_ranging_responder(Config).
-
-responder_no_ranging(Config) ->
-    {_, Node} = ?config(node, Config),
-    ExpectedFrame = ?config(tx_frame, Config),
-    ok = erpc:call(Node, ieee802154, rx_on, [?DISABLED]),
-    timer:sleep(300),
-    [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]),
-    [{_, [ExpectedFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]).
 
 %--- Utils ---------------------------------------------------------------------
 update_callback_table(Frame, _LQI, _Security, _Ranging) ->

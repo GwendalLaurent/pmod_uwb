@@ -24,10 +24,8 @@
 -callback init(PhyModule) -> State when
       PhyModule :: module(),
       State     :: term().
--callback on(State, Callback, Ranging) -> Result when
+-callback on(State) -> Result when
       State       :: term(),
-      Callback    :: input_callback_raw_frame(),
-      Ranging     :: boolean(),
       Result      :: {ok, State}
                      | {error, State, Error},
       Error       :: atom().
@@ -43,21 +41,14 @@
                     | {error, State, Error},
       RangingInfo :: ranging_informations(),
       Error       :: tx_error().
--callback rx(State) -> Result when
-      State  :: term(),
-      Result :: {ok, State, Frame}
-                | {error, State, Error},
-      Frame  :: bitstring(),
-      Error  :: atom().
 -callback terminate(State, Reason) -> ok when
       State  :: term(),
       Reason :: term().
 
 -export([start/2]).
--export([turn_on/3]).
+-export([turn_on/1]).
 -export([turn_off/1]).
 -export([tx_request/4]).
--export([rx_request/1]).
 -export([stop/2]).
 
 %--- Types ---------------------------------------------------------------------
@@ -88,14 +79,12 @@ start(Module, PhyModule) ->
 
 % @doc turns on the continuous reception
 % @TODO specify which RX module has to be used
--spec turn_on(State, Callback, Ranging) -> Result when
+-spec turn_on(State) -> Result when
       State    :: state(),
-      Callback :: input_callback_raw_frame(),
-      Ranging  :: flag(),
       Result   :: {ok, State} | {error, State, Error},
       Error    :: atom().
-turn_on({Mod, Sub}, Callback, Ranging) ->
-    case Mod:on(Sub, Callback, Ranging) of
+turn_on({Mod, Sub}) ->
+    case Mod:on(Sub) of
         {ok, Sub2} -> {ok, {Mod, Sub2}};
         {error, Sub2, Error} -> {error, {Mod, Sub2}, Error}
     end.
@@ -132,16 +121,6 @@ tx_request({Mod, Sub}, Frame, Pib, Ranging) ->
             {ok, {Mod, Sub2}, RangingInfo};
         {error, Sub2, Err} ->
             {error, {Mod, Sub2}, Err}
-    end.
-
--spec rx_request(State) -> {ok, State, Frame} | {error, State, Error} when
-      State :: state(),
-      Frame :: bitstring(),
-      Error :: atom().
-rx_request({Mod, Sub}) ->
-    case Mod:rx(Sub) of
-        {ok, Sub2, Frame} -> {ok, {Mod, Sub2}, Frame};
-        {error, Sub2, Error} -> {error, {Mod, Sub2}, Error}
     end.
 
 % @doc stop the duty cycle module

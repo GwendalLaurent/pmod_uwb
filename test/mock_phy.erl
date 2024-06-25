@@ -6,10 +6,12 @@
 -export([stop_link/0]).
 
 -export([transmit/2]).
+-export([reception_async/0]).
 -export([reception/0]).
 -export([reception/1]).
 -export([disable_rx/0]).
 
+-export([set_frame_timeout/1]).
 -export([set_preamble_timeout/1]).
 -export([disable_preamble_timeout/0]).
 
@@ -24,11 +26,18 @@
 -export([rx_preamble_repetition/0]).
 -export([rx_data_rate/0]).
 -export([prf_value/0]).
+-export([get_conf/0]).
 
 %%% gen_server callbacks
 -export([init/1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
+
+%--- Include -------------------------------------------------------------------
+
+-include("../src/pmod_uwb.hrl").
+
+%--- Macros --------------------------------------------------------------------
 
 -define(NAME, mock_phy).
 
@@ -46,14 +55,31 @@ stop_link() ->
 transmit(Data, Options) ->
     gen_server:call(?NAME, {transmit, Data, Options}).
 
+reception_async() ->
+    Frame =  gen_server:call(?NAME, {reception}),
+    Metadata = #{snr => 10.0,
+                  prf => 4,
+                  pre => 16,
+                  data_rate => 1,
+                  rng => ?DISABLED,
+                  rx_stamp => 1,
+                  tx_stamp => 1,
+                  rxtofs => 1,
+                  rxttcki => 1},
+    ieee802154_events:rx_event(Frame, Metadata).
+
 reception() ->
     gen_server:call(?NAME, {reception}).
 
 reception(_) ->
     gen_server:call(?NAME, {reception}).
 
+set_frame_timeout(Timeout) ->
+    write(rx_fwto, #{rxfwto => Timeout}),
+    write(sys_cfg, #{rxwtoe => 2#1}). % enable receive wait timeout
+
 set_preamble_timeout(Timeout) ->
-    write(drx_conf, #{drx_pretoc => Timeout - 1}).
+    write(drx_conf, #{drx_pretoc => Timeout}).
 
 disable_preamble_timeout() ->
     write(drx_conf, #{drx_pretoc => 0}).
@@ -132,15 +158,20 @@ rx_data_rate() ->
         3 -> 6800
     end.
 
-%%% gen_server callbacks
+get_conf() ->
+    gen_server:call(?NAME, {get_conf}).
+
+%--- gen_server callbacks ------------------------------------------------------
 init(_Params) ->
-    {ok, #{regs => pmod_uwb_registers:default()}}.
+    {ok, #{regs => pmod_uwb_registers:default(),
+           conf => #phy_cfg{}}}.
 
 handle_call({transmit, Data, Options}, _From, State) -> {reply, tx(Data, Options), State};
 handle_call({reception}, _From, State) -> {reply, rx(), State};
 handle_call({read, Reg}, _From, #{regs := Regs} = State) -> {reply, maps:get(Reg, Regs), State};
 handle_call({write, Reg, Val}, _From, #{regs := Regs} = State) -> {reply, ok, State#{regs => pmod_uwb_registers:update_reg(Regs, Reg, Val)}};
 handle_call({rx_off}, _From, State) -> {reply, ok, State};
+handle_call({get_conf}, _From, #{conf := Conf} = State) -> {reply, Conf, State};
 handle_call(_Request, _From, _State) -> error(not_implemented).
 
 handle_cast(_Request, _State) ->
@@ -153,7 +184,3 @@ tx(_Data, _Options) ->
 
 rx() ->
     {14, <<16#6188:16, 0:8, 16#CADE:16, "XR", "XT", "Hello">>}.
-
-rx_faulty() ->
-    timer:sleep(2000),
-    rxpto.

@@ -16,9 +16,10 @@
 -define(MACMAXFRAMERETRIES, 3).
 -define(MACACKWAITDURATION, 4000).  % works with 2000 µs but calculations give me 4081µs
 % -define(MACACKWAITDURATION, 2000).  % works with 2000 µs but calculations give me 4081µs
+%
+-define(GEN_EVENT, gen_event).
 
 %--- Types ---------------------------------------------------------------------
-
 %--- Record types
 -record(ieee_parameters, {duty_cycle = duty_cycle_non_beacon :: module(),
                           phy_layer = pmod_uwb :: module(),

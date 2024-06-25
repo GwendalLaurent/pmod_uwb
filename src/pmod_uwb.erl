@@ -4,6 +4,7 @@
 % API
 -export([start_link/2]).
 -export([read/1, write/2, write_tx_data/1, get_received_data/0, transmit/1, transmit/2, wait_for_transmission/0, reception/0, reception/1]).
+-export([reception_async/0]).
 -export([set_frame_timeout/1]).
 -export([set_preamble_timeout/1, disable_preamble_timeout/0]).
 -export([softreset/0, clear_rx_flags/0]).
@@ -16,6 +17,8 @@
 -export([rx_ranging_info/0]).
 -export([std_noise/0]).
 -export([first_path_power_level/0]).
+-export([get_conf/0]).
+-export([get_rx_metadata/0]).
 
 % gen_server callback
 -export([init/1, handle_call/3, handle_cast/2]).
@@ -174,6 +177,28 @@ write_tx_data(Value) -> call({write_tx, Value}).
     Result :: {integer(), bitstring()} | {error, any()}.
 get_received_data() -> call({get_rx_data}).
 
+get_rx_metadata() ->
+    #{rng := Rng} = read(rx_finfo),
+    #{rx_stamp := RxStamp} = read(rx_time),
+    #{tx_stamp := TxStamp} = read(tx_time),
+    #{rxtofs := Rxtofs} = read(rx_ttcko),
+    #{rxttcki := Rxttcki} = read(rx_ttcki),
+    #{snr => snr(),
+      prf => prf_value(),
+      pre => rx_preamble_repetition(),
+      data_rate => rx_data_rate(),
+      rng => Rng,
+      rx_stamp => RxStamp,
+      tx_stamp => TxStamp,
+      rxtofs => Rxtofs,
+      rxttcki => Rxttcki}.
+
+% Source: https://forum.qorvo.com/t/how-to-calculate-the-signal-to-noise-ratio-snr-of-dw1000/5585/3
+snr() ->
+    Delta = 87-7.5,
+    RSL = pmod_uwb:signal_power(),
+    RSL + Delta.
+
 %% @doc Transmit data with the default options (i.e. don't wait for resp, ...)
 %%
 %% === Examples ===
@@ -234,7 +259,7 @@ wait_for_transmission() ->
 %% @equiv reception(false)
 -spec reception() -> Result when 
     Result :: {integer(), bitstring()} | {error, any()}.
-reception() -> 
+reception() ->
     reception(false).
 
 %% @doc Receive data using the pmod 
@@ -260,11 +285,21 @@ reception(RXEnabled) ->
        true -> ok
     end,
     case wait_for_reception() of
-        ok -> % write(sys_status, #{rxfcg => 1}),
-              get_received_data();
-        Err -> Err
+        ok ->
+            get_received_data();
+        Err ->
+            {error, Err}
     end.
 
+-spec reception_async() -> Result when
+      Result    :: ok | {error, any()}.
+reception_async() ->
+    case reception() of
+        {error, _} = Err -> Err;
+        Frame ->
+            Metadata = get_rx_metadata(),
+            ieee802154_events:rx_event(Frame, Metadata)
+    end.
 
 %% @private
 enable_rx() ->
@@ -296,25 +331,29 @@ wait_for_reception() ->
     end.
 
 %% @doc Set the frame wait timeout and enables it
+%% The unit is roughtly 1us (cf. user manual)
+%% If a float is given, it's decimal part is removed using trunc/1
+%% @end
 -spec set_frame_timeout(Timeout) -> Result when
       Timeout :: microseconds(),
       Result  :: ok.
-set_frame_timeout(Timeout) -> 
+set_frame_timeout(Timeout) when is_float(Timeout) ->
+    set_frame_timeout(trunc(Timeout));
+set_frame_timeout(Timeout) when is_integer(Timeout) ->
     write(rx_fwto, #{rxfwto => Timeout}),
     write(sys_cfg, #{rxwtoe => 2#1}). % enable receive wait timeout
 
 %% @doc Sets the preamble timeout. (PRETOC register of the DW1000)
-%% The unit of `Timeout' is in units PAC size symbols
-%% Approx. 1 preamble symbol ~ 1µs
-%% Default PAC is 8 => 1 unit is ~8µs
-%% Source: https://forum.qorvo.com/t/carrier-sense-multiple-access-with-collision-avoidance-in-dw1000/3659/3
-%% <b> Don't use this function Timeout = 0</b>
-%% To disable the preamble timeout, use the function disable_preamble_timeout/0
+%% The unit of `Timeout' is in units usec
+%% If the value is a float, trunc is called to remove the decimal part
+%% Internally, it's converted in untis of PAC size
 -spec set_preamble_timeout(Timeout) -> ok when
-      Timeout :: pos_integer().
-set_preamble_timeout(Timeout) ->
-    % Remove 1 because DW1000 counter auto. adds 1 (cf. 7.2.40.9 user manual)
-    write(drx_conf, #{drx_pretoc => Timeout - 1}).
+      Timeout :: non_neg_integer().
+set_preamble_timeout(TO) when is_float(TO) ->
+    set_preamble_timeout(trunc(TO));
+set_preamble_timeout(TO) when is_integer(TO) ->
+    call({preamble_timeout, TO}),
+    write(drx_conf, #{drx_pretoc => 0}).
 
 disable_preamble_timeout() ->
     write(drx_conf, #{drx_pretoc => 0}).
@@ -326,7 +365,7 @@ softreset() ->
     write(pmsc, #{pmsc_ctrl0 => #{softreset => 16#FFFF}}).
 
 
-clear_rx_flags() -> 
+clear_rx_flags() ->
     write(sys_status, #{rxsfdto => 2#1, 
                         rxpto => 2#1,
                         rxrfto => 2#1,
@@ -415,7 +454,10 @@ first_path_power_level() ->
     A = 113.77,
     N = preamble_acc(),
     10 * math:log10((math:pow(F1,2) + math:pow(F2, 2) + math:pow(F3, 2))/math:pow(N, 2)) - A. 
-    
+
+get_conf() ->
+    call({get_conf}).
+
 %--- gen_server Callbacks ------------------------------------------------------
 
 %% @private
@@ -432,10 +474,12 @@ init(Slot) ->
         Val -> error({dev_id_no_match, Val})
     end,
     ldeload(Bus),
+    % TODO Merge the next 4 cfg commands into one
     write_default_values(Bus),
     config(Bus),
     setup_sfd(Bus),
-    {ok, #{bus => Bus}}.
+    Conf =  #phy_cfg{},
+    {ok, #{bus => Bus, conf => Conf}}.
 
 %% @private
 handle_call({read, RegFileID}, _From, #{bus := Bus} = State)               ->
@@ -450,6 +494,20 @@ handle_call({delayed_transmit, Data, Delay}, _From, #{bus := Bus} = State) ->
     {reply, delayed_tx(Bus, Data, Delay), State};
 handle_call({get_rx_data}, _From, #{bus := Bus} = State)                   ->
     {reply, get_rx_data(Bus), State};
+handle_call({get_conf}, _From, #{conf := Conf} = State)                    ->
+    {reply, Conf, State};
+handle_call({preamble_timeout, TOus}, _From, State)                        ->
+    #{bus := Bus, conf := Conf} = State,
+    PACSize = Conf#phy_cfg.pac_size,
+    case TOus of
+        0 ->
+            write_reg(Bus, drx_conf, #{drx_pretoc => 0});
+        _ ->
+            % Remove 1 because DW1000 counter auto. adds 1 (cf. 7.2.40.9 user manual)
+            To = math:ceil(TOus / PACSize)-1,
+            write_reg(Bus, drx_conf, #{drx_pretoc => round(To)})
+    end,
+    {reply, ok, State};
 handle_call(Request, _From, _State)                                        ->
     error({unknown_call, Request}).
 
@@ -505,7 +563,6 @@ config(Bus) ->
     write_reg(Bus, dig_diag, #{evc_ctrl => #{evc_en => 2#1}}), % enable counting event for debug purposes
     % write_reg(Bus, sys_cfg, #{rxwtoe => 2#1}),
     write_reg(Bus, tx_fctrl, #{txpsr => 2#10}). % Setting preamble symbols to 1024
-    
 
 %% @private
 %% Load the microcode from ROM to RAM

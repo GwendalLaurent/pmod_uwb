@@ -46,7 +46,9 @@ start(Module, PhyMod) ->
       Error     :: tx_error().
 transmit({Module, Sub}, Frame, Pib, TxOptions) ->
     case Module:tx(Sub, Frame, Pib, TxOptions) of
-        {ok, Sub2} -> {ok, {Module, Sub2}};
+        {ok, Sub2} ->
+            timer:sleep(1), % FIXME: IFS
+            {ok, {Module, Sub2}};
         {error, Sub2, Error} -> {error, {Module, Sub2}, Error}
     end.
 
