@@ -60,7 +60,8 @@ reception() ->
     case {read(drx_conf), read(rx_fwto)} of
         {#{drx_pretoc := 0}, #{rxfwto := RXFWTO}} ->
             rx_(round(RXFWTO/1000), rxrfto);
-        {#{drx_pretoc := PRETOC}, _} -> rx_(round(PRETOC/1000), rxpto)
+        {#{drx_pretoc := PRETOC}, _} ->
+            rx_(round(PRETOC/1000), rxpto)
     end.
 
 reception_async() ->

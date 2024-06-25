@@ -104,11 +104,17 @@ cca(PhyMod) ->
         _ -> error % In case you receive a frame -> ? Could this happen ?
     end.
 
-% CCA duration in micro-seconds
+% @doc Give the CCA duration in micro-seconds for mode 5
+% According to sec. 8.2.7 the CCA period shall be no shorter than
+% The maximum packet duration + maximum period for acknowledgment
+%
+% @end
 cca_duration(PhyMod) ->
     Conf = PhyMod:get_conf(),
-    (ieee802154_utils:pckt_duration(127, Conf) +
-     ieee802154_utils:pckt_duration(5, Conf)) / ieee802154_utils:t_dsym(Conf).
+    TMaxPckt = ieee802154_utils:pckt_duration(127, Conf),
+    TAckPckt = ieee802154_utils:pckt_duration(5, Conf),
+    TurnAroundRxTx = 12, % us cf. datasheet sec. 5.1.6
+     ((TMaxPckt + TAckPckt) / ieee802154_utils:t_dsym(Conf)) + TurnAroundRxTx.
 
 % @doc computes the backoff period (in symbol units)
 % Table 11 - sec.5.1.1.4 says that this period shall be equal to:

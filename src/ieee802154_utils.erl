@@ -17,6 +17,7 @@
 
 %--- API -----------------------------------------------------------------------
 
+% @doc get the packet duration in ns
 pckt_duration(PcktSize, Conf) ->
     #phy_cfg{prf = PRF, psr = PSR, sfd = SFD} = Conf,
     TShr = t_psym(PRF) * (PSR + SFD),
