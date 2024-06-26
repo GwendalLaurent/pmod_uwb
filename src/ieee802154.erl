@@ -217,6 +217,7 @@ handle_call({tx, Frame, Ranging}, _From, State) ->
     EncFrame = mac_frame:encode(FrameControl, MacHeader, Payload),
     case gen_duty_cycle:tx_request(DCState, EncFrame, Pib, Ranging) of
         {ok, NewDCState, RangingInfos} ->
+            timer:sleep(100), % FIXME: IFS
             {reply, {ok, RangingInfos}, State#{duty_cycle => NewDCState}};
         {error, NewDCState, Error} ->
             {reply, {error, Error}, State#{duty_cycle => NewDCState}}

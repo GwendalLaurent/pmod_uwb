@@ -149,6 +149,7 @@ rx_loop_on(State) ->
       Reason  :: atom().
 turn_off_rx_loop(_, undefined, _) -> ok;
 turn_off_rx_loop(PhyMod, LoopPid, Reason) ->
+    PhyMod:disable_rx(),
     unlink(LoopPid),
     exit(LoopPid, Reason),
     PhyMod:write(pmsc, #{pmsc_ctrl1 => #{arx2init => 2#0}}),

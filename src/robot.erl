@@ -67,6 +67,7 @@ rx_callback({RxFC, RxMacHeader, Payload}, _LQI, _Security, _Ranging) ->
     NewFC = RxFC#frame_control{ack_req = ?DISABLED},
     NewMH = RxMacHeader#mac_header{src_addr = NewSrc, dest_addr = <<16#0003:16>>, seqnum = NewSeqnum},
     ieee802154:transmission({NewFC, NewMH, Payload}),
+    ieee802154:transmission({NewFC, NewMH, Payload}),
     ok.
 
 rx_on() -> ieee802154:rx_on().
@@ -105,7 +106,7 @@ jammer(N) ->
     jammer(N-1).
 
 tx_benchmark() ->
-    NbrFrames = 100,
+    NbrFrames = 10,
     % NbrFrames = 1000,
     Start = os:timestamp(),
     {Success, Error, Total} = tx(NbrFrames, 0, 0, 0),
