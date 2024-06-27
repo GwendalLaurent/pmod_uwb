@@ -214,6 +214,7 @@ handle_call({rx_off}, _From, #{duty_cycle := DCState} = State) ->
 handle_call({tx, Frame, Ranging}, _From, State) ->
     #{duty_cycle := DCState, pib := Pib} = State,
     {FrameControl, MacHeader, Payload} = Frame,
+    % FIXME Find a better way to handle DSN (e.g. don't let the user specify it)
     {ok, NewPib, DSN} = ieee802154_pib:get_and_incr_dsn(Pib),
     EncFrame = mac_frame:encode(FrameControl,
                                 MacHeader#mac_header{seqnum = DSN},
