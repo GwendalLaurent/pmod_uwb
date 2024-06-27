@@ -107,11 +107,18 @@ standard_ranging_initiator(Config) ->
 
 standard_ranging_responder(Config) ->
     {_, Node} = ?config(node, Config),
-    ExpectedFrame = ?config(tx_frame, Config),
+    {FC, MH, Payload} = ?config(tx_frame, Config),
     ok = erpc:call(Node, ieee802154, rx_on, []),
     timer:sleep(300),
     [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]),
-    [{_, [ExpectedFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]).
+    [{_, [{RxFC, RxMH, RxPld}]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]),
+    ?assertEqual(FC, RxFC),
+    ?assertEqual(MH#mac_header.src_pan, RxMH#mac_header.src_pan),
+    ?assertEqual(MH#mac_header.src_addr, RxMH#mac_header.src_addr),
+    ?assertEqual(MH#mac_header.dest_pan, RxMH#mac_header.dest_pan),
+    ?assertEqual(MH#mac_header.dest_addr, RxMH#mac_header.dest_addr),
+    ?assertEqual(Payload, RxPld).
+
 
 non_ranging_initiator(Config) ->
     {_, Node} = ?config(node, Config),

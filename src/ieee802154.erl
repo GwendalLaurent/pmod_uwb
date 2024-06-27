@@ -214,13 +214,18 @@ handle_call({rx_off}, _From, #{duty_cycle := DCState} = State) ->
 handle_call({tx, Frame, Ranging}, _From, State) ->
     #{duty_cycle := DCState, pib := Pib} = State,
     {FrameControl, MacHeader, Payload} = Frame,
-    EncFrame = mac_frame:encode(FrameControl, MacHeader, Payload),
-    case gen_duty_cycle:tx_request(DCState, EncFrame, Pib, Ranging) of
+    {ok, NewPib, DSN} = ieee802154_pib:get_and_incr_dsn(Pib),
+    EncFrame = mac_frame:encode(FrameControl,
+                                MacHeader#mac_header{seqnum = DSN},
+                                Payload),
+    case gen_duty_cycle:tx_request(DCState, EncFrame, NewPib, Ranging) of
         {ok, NewDCState, RangingInfos} ->
             timer:sleep(100), % FIXME: IFS
-            {reply, {ok, RangingInfos}, State#{duty_cycle => NewDCState}};
+            {reply, {ok, RangingInfos}, State#{duty_cycle => NewDCState,
+                                               pib => NewPib}};
         {error, NewDCState, Error} ->
-            {reply, {error, Error}, State#{duty_cycle => NewDCState}}
+            {reply, {error, Error}, State#{duty_cycle => NewDCState,
+                                           pib => NewPib}}
         end;
 handle_call({get, Attribute}, _From, State) ->
     #{pib := Pib} = State,

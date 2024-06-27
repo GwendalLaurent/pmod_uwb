@@ -200,18 +200,19 @@ sender_rx_loop_reply(Config) ->
     [{nb_rx_frames, NbRxFrames}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]), % When ack is received, rx_loop and callbacks are off => doesn't count in the simulation as a received frame
     ?assertEqual(1, NbRxFrames),
     [{_, [RxFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]),
-    ?assertEqual(Reply, RxFrame).
+    verify_rx_frame(Reply, RxFrame).
 
 receiver_rx_loop_reply(Config) ->
     {_, Node} = ?config(receiver_rx_loop_reply, Config),
     ExpectedFrame = get_expected_frame(Config),
-    {FrameControl, MacHeader, Payload} = ?config(reply, Config),
+    {ReplyFC, ReplyMH, ReplyPld} = ?config(reply, Config),
     ok = erpc:call(Node, ieee802154, rx_on, []),
     ct:sleep(200),
     [{nb_rx_frames, 1}] = erpc:call(Node, ets, lookup, [callback_table, nb_rx_frames]),
-    [{_, [ExpectedFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]),
-    {ok, _} = erpc:call(Node, ieee802154, transmission, [{FrameControl, MacHeader, Payload}]),
-    ok = erpc:call(Node, ieee802154, rx_off, []).
+    [{_, [RxFrame]}] = erpc:call(Node, ets, lookup, [callback_table, rx_frames]),
+    {ok, _} = erpc:call(Node, ieee802154, transmission, [{ReplyFC, ReplyMH, ReplyPld}]),
+    ok = erpc:call(Node, ieee802154, rx_off, []),
+    verify_rx_frame(ExpectedFrame, RxFrame).
 
 %--- unslotted CSMA-CA test case group
 sender_busy_medium(Config) -> 
@@ -244,14 +245,14 @@ fwd_receiver(Config) ->
     ok = erpc:call(Node, ieee802154, rx_on, []),
     NodeAddr = erpc:call(Node, ieee802154, get_pib_attribute, [mac_extended_address]),
     ct:sleep(10000),
-    verify_frame_seq(Node, NodeAddr, 11, 10).
+    verify_frame_seq(Node, NodeAddr, 10).
 
 fwd_mid(Config) ->
     {_, Node} = ?config(fwd_mid, Config),
     ok = erpc:call(Node, ieee802154, rx_on, []),
     NodeAddr = erpc:call(Node, ieee802154, get_pib_attribute, [mac_extended_address]),
     ct:sleep(10000),
-    verify_frame_seq(Node, NodeAddr, 1, 10).
+    verify_frame_seq(Node, NodeAddr, 10).
 
 %--- Internal -------------------------------------------------------------------------------
 
@@ -280,9 +281,10 @@ jammer_loop(Node, N) ->
     timer:sleep(5),
     jammer_loop(Node, N-1).
 
-verify_frame_seq(Node, DestAddr, FirstSeqnum, ExpNbrFrames) ->
+verify_frame_seq(Node, DestAddr, ExpNbrFrames) ->
     {ok ,Frames} = erpc:call(Node, mock_top_layer, dump, []),
     Seqnums = lists:map(fun({_, MH, _}) -> MH#mac_header.seqnum end, Frames),
+    [FirstSeqnum | _] = Seqnums,
     Comment = lists:flatten(io_lib:format("seqnums received: ~w", [Seqnums])),
     ?assertEqual(ExpNbrFrames, length(Frames), Comment),
     lists:foldl(fun({_, MH, _}, ExpectedSeqnum) ->
@@ -290,5 +292,13 @@ verify_frame_seq(Node, DestAddr, FirstSeqnum, ExpNbrFrames) ->
                         FrameDestAddr = MH#mac_header.dest_addr,
                         ?assertEqual(ExpectedSeqnum, Seqnum),
                         ?assertEqual(DestAddr, FrameDestAddr),
-                        ExpectedSeqnum + 1
+                        (ExpectedSeqnum + 1) rem 16#FF
                 end, FirstSeqnum, Frames).
+
+verify_rx_frame({ExpFC, ExpMH, ExpPld}, {RxFC, RxMH, RxPld}) ->
+    ?assertEqual(ExpFC, RxFC),
+    ?assertEqual(ExpPld, RxPld),
+    ?assertEqual(ExpMH#mac_header.src_addr, RxMH#mac_header.src_addr),
+    ?assertEqual(ExpMH#mac_header.src_pan, RxMH#mac_header.src_pan),
+    ?assertEqual(ExpMH#mac_header.dest_addr, RxMH#mac_header.dest_addr),
+    ?assertEqual(ExpMH#mac_header.dest_pan, RxMH#mac_header.dest_pan).
